@@ -63,6 +63,7 @@ export default function TypingTest() {
   const inputRef = useRef(null);
   const wordStatusesRef = useRef([]);   // mirrors wordStatuses state for sync access in callbacks
   const typedWordsRef = useRef([]);     // stores what user typed per completed word index
+  const prevWpmRef = useRef(0);        // tracks previous WPM for pulse detection
 
   // ─── State ────────────────────────────────────────────────────────
   const [words, setWords] = useState(() => pickWords(WORDS_PER_TEST));
@@ -78,6 +79,7 @@ export default function TypingTest() {
   const [resultData, setResultData] = useState(null);
   const [postStatus, setPostStatus] = useState('idle');     // 'idle' | 'posting' | 'error' | 'done'
   const [cachedStats, setCachedStats] = useState(null);     // snapshot stats on finish
+  const [wpmPulseKey, setWpmPulseKey] = useState(0);       // increments on WPM change to trigger pulse animation
 
   // ─── Computed ─────────────────────────────────────────────────────
   const currentWord = words[currentWordIndex] || '';
@@ -106,6 +108,10 @@ export default function TypingTest() {
       const minutes = elapsedMs / 60000;
       const wpm = minutes > 0 ? Math.round((correctChars / 5) / minutes) : 0;
       setLiveWpm(wpm);
+      if (wpm !== prevWpmRef.current) {
+        prevWpmRef.current = wpm;
+        setWpmPulseKey(k => k + 1);
+      }
     }, 1000);
 
     return () => clearInterval(interval);
@@ -386,6 +392,7 @@ export default function TypingTest() {
     wordStatusesRef.current = [];
     typedWordsRef.current = [];
     startTimeRef.current = null;
+    prevWpmRef.current = 0;
     setWords(pickWords(WORDS_PER_TEST));
     setCurrentWordIndex(0);
     setUserInput('');
@@ -393,6 +400,7 @@ export default function TypingTest() {
     setWordStatuses([]);
     setTypedWords([]);
     setLiveWpm(0);
+    setWpmPulseKey(0);
     setLiveAccuracy(100);
     setLiveWordAccuracy(100);
     setElapsed(0);
@@ -413,7 +421,7 @@ export default function TypingTest() {
       // Correct word: simple green rendering
       if (status === 'correct') {
         return (
-          <span key={index} className="text-green-600 opacity-70 px-0.5">
+          <span key={`${index}-correct`} className="text-green-600 opacity-70 px-0.5 inline-block" style={{ animation: 'word-pop 0.35s ease' }}>
             {word}{' '}
           </span>
         );
@@ -428,7 +436,7 @@ export default function TypingTest() {
         if (i < word.length) {
           const isCharCorrect = i < typed.length && typed[i] === word[i];
           incorrectChars.push(
-            <span key={i} className={isCharCorrect ? 'text-green-600' : 'text-red-500'}>
+            <span key={i} className={`transition-colors duration-500 ${isCharCorrect ? 'text-green-600' : 'text-red-500'}`}>
               {word[i]}
             </span>
           );
@@ -439,7 +447,7 @@ export default function TypingTest() {
       if (typed.length > word.length) {
         for (let i = word.length; i < typed.length; i++) {
           incorrectChars.push(
-            <span key={`extra-${i}`} className="text-red-500 opacity-60">
+            <span key={`extra-${i}`} className="text-red-500 opacity-60 transition-colors duration-500">
               {typed[i]}
             </span>
           );
@@ -449,7 +457,7 @@ export default function TypingTest() {
       incorrectChars.push(<span key="space"> </span>);
 
       return (
-        <span key={index} className="px-0.5 opacity-70 underline decoration-red-500 underline-offset-2">
+        <span key={`${index}-incorrect`} className="px-0.5 opacity-70 underline decoration-red-500 underline-offset-2 inline-block" style={{ animation: 'word-pop 0.35s ease' }}>
           {incorrectChars}
         </span>
       );
@@ -475,7 +483,7 @@ export default function TypingTest() {
       if (i === userInput.length && i < word.length) {
         chars.push(
           <span key="cursor" className="relative inline-block w-0 align-baseline">
-            <span className="absolute right-0 -top-[0.95em] w-[3px] h-[1.15em] bg-yellow-400 cursor-blink rounded-sm" />
+            <span className="absolute right-0 -top-[0.95em] w-[3px] h-[1.15em] bg-yellow-400 cursor-blink rounded-sm shadow-[0_0_6px_rgba(250,204,21,0.5)]" />
           </span>
         );
       }
@@ -488,14 +496,14 @@ export default function TypingTest() {
 
         if (i < word.length) {
           chars.push(
-            <span key={i} className={isCorrect ? 'text-green-400' : 'text-red-400'}>
+            <span key={i} className={`transition-colors duration-500 ${isCorrect ? 'text-green-400' : 'text-red-400'}`}>
               {word[i]}
             </span>
           );
         } else {
           // User typed extra characters beyond word length
           chars.push(
-            <span key={i} className="text-red-400">
+            <span key={i} className="text-red-400 transition-colors duration-500">
               {typed}
             </span>
           );
@@ -504,7 +512,7 @@ export default function TypingTest() {
         // Not yet reached
         if (i < word.length) {
           chars.push(
-            <span key={i} className="text-slate-400">{word[i]}</span>
+            <span key={i} className="text-slate-400 transition-colors duration-500">{word[i]}</span>
           );
         }
       }
@@ -514,7 +522,7 @@ export default function TypingTest() {
     if (userInput.length >= maxLen) {
       chars.push(
         <span key="cursor-end" className="relative inline-block w-0 align-baseline">
-          <span className="absolute left-0 -top-[0.95em] w-[3px] h-[1.15em] bg-yellow-400 cursor-blink rounded-sm" />
+          <span className="absolute left-0 -top-[0.95em] w-[3px] h-[1.15em] bg-yellow-400 cursor-blink rounded-sm shadow-[0_0_6px_rgba(250,204,21,0.5)]" />
         </span>
       );
     }
@@ -539,10 +547,39 @@ export default function TypingTest() {
     </div>
   );
 
+  // --- Render progress bar ---
+  const renderProgressBar = () => {
+    const done = wordStatuses.filter(s => s !== null && s !== undefined).length;
+    const pct = words.length > 0 ? Math.round((done / words.length) * 100) : 0;
+    return (
+      <div className="w-full max-w-xl mx-auto mb-5">
+        <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-yellow-400 rounded-full transition-all duration-500 ease-out"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  // --- Render live WPM (big, above stats) ---
+  const renderLiveWpm = () => (
+    <div className="flex justify-center mb-3">
+      <span
+        key={wpmPulseKey}
+        className="text-7xl font-bold text-yellow-400 inline-block tabular-nums"
+        style={{ animation: 'wpm-pulse 0.4s ease' }}
+      >
+        {liveWpm}
+      </span>
+      <span className="text-2xl text-slate-500 font-mono self-end mb-2 ml-1">WPM</span>
+    </div>
+  );
+
   // --- Render live stats bar ---
   const renderStatsBar = () => (
     <div className="flex gap-6 justify-center text-sm text-slate-400 font-mono mb-6">
-      <span>WPM: <span className="text-yellow-400 font-bold">{liveWpm}</span></span>
       <span>Acc: <span className="text-yellow-400 font-bold">{liveAccuracy}%</span></span>
       <span>Word Acc: <span className="text-yellow-400 font-bold">{liveWordAccuracy}%</span></span>
       <span>Word <span className="text-yellow-400 font-bold">{currentWordIndex + 1}</span> / {words.length}</span>
@@ -632,7 +669,9 @@ export default function TypingTest() {
 
       {testState !== 'finished' && (
         <>
+          {renderLiveWpm()}
           {renderStatsBar()}
+          {renderProgressBar()}
           {renderWords()}
           <p className={`text-slate-500 mt-8 text-sm ${testState === 'idle' ? '' : 'invisible'}`}>
             Start typing to begin the test...
