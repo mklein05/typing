@@ -56,7 +56,7 @@ function pickWords(count) {
   return shuffled.slice(0, count);
 }
 
-export default function TypingTest() {
+export default function TypingTest({ onViewDashboard }) {
   // ─── Refs (don't trigger re-renders on every keystroke) ──────────
   const keystrokesRef = useRef([]);
   const startTimeRef = useRef(null);
@@ -127,6 +127,11 @@ export default function TypingTest() {
       : 0;
 
     const keystrokes = keystrokesRef.current;
+
+    // ─── Debug: log collected keystroke data ─────────────────────
+    console.log("keystrokes:", keystrokes);
+    console.log("total keystrokes:", keystrokes.length);
+    console.log("sample:", JSON.stringify(keystrokes.slice(0, 5), null, 2));
 
     // Count correct characters (excluding space and backspace)
     const correctChars = keystrokes.filter(k => k.correct && k.key !== ' ' && k.key !== 'Backspace').length;
@@ -635,7 +640,7 @@ export default function TypingTest() {
             Try Again
           </button>
           <button
-            onClick={() => alert('Dashboard coming soon')}
+            onClick={onViewDashboard || (() => alert('Dashboard coming soon'))}
             className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold rounded-lg transition-colors"
           >
             View Dashboard
