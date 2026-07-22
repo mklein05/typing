@@ -311,7 +311,7 @@ export default function TypingTest({ onViewDashboard }) {
       keystrokesRef.current.push({
         sequence: seq,
         key: 'Backspace',
-        intended: expectedChar || '',
+        intended: expectedChar || e.key,
         correct: false,
         pressed_at_ms: pressTime,
         released_at_ms: pressTime, // will be updated on keyup
@@ -330,7 +330,7 @@ export default function TypingTest({ onViewDashboard }) {
     e.preventDefault();
 
     const pos = userInput.length;
-    const intended = currentWord[pos] || '';
+    const intended = currentWord[pos] || e.key;
     const correct = e.key === intended;
 
     keystrokesRef.current.push({

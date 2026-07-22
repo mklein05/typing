@@ -1,35 +1,55 @@
 import { useEffect, useState } from 'react';
 import KeyStatsChart from './KeyStatsChart';
 import KeyStatsTable from './KeyStatsTable';
+import BigramChart from './BigramChart';
+import BigramTable from './BigramTable';
 
-const API_URL = 'http://localhost:8000/api/stats/keys';
+const KEYS_API = 'http://localhost:8000/api/stats/keys';
+const BIGRAMS_API = 'http://localhost:8000/api/stats/bigrams';
 
 /**
- * Dashboard — fetches per-key stats from the backend and renders
- * summary cards, a bar chart of worst keys, and a sortable table.
+ * Dashboard — fetches per-key and bigram stats from the backend and renders
+ * summary cards, bar charts of worst keys/bigrams, and sortable tables.
  */
 export default function Dashboard({ onBackToTest }) {
-  const [data, setData] = useState(null);    // raw API response
+  const [data, setData] = useState(null);              // key stats API response
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  /** Fetch stats from the backend */
+  const [bigramData, setBigramData] = useState(null);  // bigram API response
+  const [bigramLoading, setBigramLoading] = useState(true);
+  const [bigramError, setBigramError] = useState(null);
+
+  /** Fetch both key stats and bigrams in parallel. */
   function fetchStats() {
     setLoading(true);
     setError(null);
+    setBigramLoading(true);
+    setBigramError(null);
 
-    fetch(API_URL)
-      .then((res) => {
-        if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+    Promise.all([
+      fetch(KEYS_API).then((res) => {
+        if (!res.ok) throw new Error(`Keys: ${res.status}`);
         return res.json();
-      })
-      .then((json) => {
-        setData(json);
+      }),
+      fetch(BIGRAMS_API).then((res) => {
+        if (!res.ok) throw new Error(`Bigrams: ${res.status}`);
+        return res.json();
+      }),
+    ])
+      .then(([keysJson, bigramsJson]) => {
+        setData(keysJson);
         setLoading(false);
+        setBigramData(bigramsJson);
+        setBigramLoading(false);
       })
       .catch((err) => {
+        // If the combined fetch fails, try to set errors independently.
+        // We can't easily split errors from Promise.all, so set both.
         setError(err.message);
         setLoading(false);
+        setBigramError(err.message);
+        setBigramLoading(false);
       });
   }
 
@@ -156,6 +176,83 @@ export default function Dashboard({ onBackToTest }) {
           </h3>
           <KeyStatsTable keys={keys} />
         </div>
+
+        {/* ══════════════════════════════════════════════════════════
+            BIGRAM ANALYSIS
+           ══════════════════════════════════════════════════════════ */}
+
+        {/* Separator */}
+        <hr className="border-slate-700 my-10" />
+
+        <h2 className="text-2xl font-bold text-slate-200 mb-6">
+          Bigram Analysis
+        </h2>
+
+        {/* Bigram loading */}
+        {bigramLoading && (
+          <div className="flex items-center gap-3 text-slate-400 font-mono text-sm mb-8">
+            <div className="w-5 h-5 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+            Loading bigram data...
+          </div>
+        )}
+
+        {/* Bigram error */}
+        {!bigramLoading && bigramError && (
+          <div className="mb-8 text-red-400 font-mono text-sm">
+            Could not load bigram data: {bigramError}
+          </div>
+        )}
+
+        {/* Bigram empty */}
+        {!bigramLoading && !bigramError && bigramData && bigramData.bigrams.length === 0 && (
+          <p className="text-slate-400 text-sm font-mono mb-8">
+            Complete more typing tests to see bigram analysis
+            (minimum 3 occurrences per bigram required).
+          </p>
+        )}
+
+        {/* Bigram success */}
+        {!bigramLoading && !bigramError && bigramData && bigramData.bigrams.length > 0 && (
+          <>
+            {/* Bigram chart */}
+            <div className="mb-6">
+              <h3 className="text-slate-200 text-lg font-bold mb-4">
+                Weakest Key Transitions
+              </h3>
+              <BigramChart bigrams={bigramData.bigrams.slice(0, 10)} />
+              {(() => {
+                const worst = bigramData.bigrams[0];
+                const allLatencies = bigramData.bigrams.flatMap(
+                  (b) => Array(b.total_occurrences).fill(b.avg_interkey_latency_ms)
+                );
+                const avgLatency = allLatencies.length > 0
+                  ? Math.round(allLatencies.reduce((s, v) => s + v, 0) / allLatencies.length)
+                  : 0;
+                const diff = worst.avg_interkey_latency_ms - avgLatency;
+                const a = worst.bigram[0] || '';
+                const b = worst.bigram[1] || '';
+                return (
+                  <p className="text-sm text-slate-400 italic mt-3">
+                    Your slowest transition is {a} → {b} at{' '}
+                    {Math.round(worst.avg_interkey_latency_ms)}ms
+                    {diff > 0
+                      ? ` — that's ${Math.round(diff)}ms slower than your average.`
+                      : '.'}{' '}
+                    These two keys may share the same finger.
+                  </p>
+                );
+              })()}
+            </div>
+
+            {/* Bigram table */}
+            <div>
+              <h3 className="text-slate-200 text-lg font-bold mb-4">
+                All Bigrams ({bigramData.bigrams.length})
+              </h3>
+              <BigramTable bigrams={bigramData.bigrams} />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -9,7 +9,7 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "typing_test.db")
 
 def get_db() -> sqlite3.Connection:
     """Return a SQLite connection with row_factory and foreign keys enabled."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -142,7 +142,7 @@ def get_key_stats(db: sqlite3.Connection) -> dict:
         A dict with keys: "keys" (list), "total_keystrokes_analysed",
         and "total_sessions".
     """
-    excluded = (" ", "Backspace", "Shift", "Control",
+    excluded = ("", " ", "Backspace", "Shift", "Control",
                 "Alt", "Meta", "Tab", "Enter", "CapsLock")
     placeholders = ",".join("?" for _ in excluded)
 
@@ -203,6 +203,73 @@ def get_key_stats(db: sqlite3.Connection) -> dict:
     return {
         "keys": keys,
         "total_keystrokes_analysed": total_analysed,
+        "total_sessions": total_sessions,
+    }
+
+
+def get_bigram_stats(db: sqlite3.Connection) -> dict:
+    """Analyse consecutive key-pair (bigram) statistics across all sessions.
+
+    A bigram is a pair of consecutive intended keys within the same word.
+    For example, typing "wheel" produces: wh, he, ee, el.
+
+    Only includes bigrams appearing at least 3 times. Sorted by error rate
+    descending (worst first). Excludes pairs involving Space, Backspace,
+    or modifier keys.
+
+    Args:
+        db: An open SQLite connection.
+
+    Returns:
+        A dict with keys: "bigrams" (list), "total_bigrams_analysed",
+        "total_unique_bigrams", and "total_sessions".
+    """
+    excluded = ("", " ", "Backspace", "Shift", "Control",
+                "Alt", "Meta", "Tab", "Enter", "CapsLock")
+    placeholders = ",".join("?" for _ in excluded)
+
+    # Total sessions
+    session_row = db.execute("SELECT COUNT(*) AS cnt FROM sessions").fetchone()
+    total_sessions = session_row["cnt"] if session_row else 0
+
+    rows = db.execute(
+        f"""SELECT
+                k1.intended_key || k2.intended_key AS bigram,
+                COUNT(*) AS total_occurrences,
+                SUM(CASE WHEN k2.correct = 0 THEN 1 ELSE 0 END) AS errors,
+                ROUND(AVG(k2.pressed_at_ms - k1.pressed_at_ms), 2)
+                    AS avg_interkey_latency_ms
+            FROM keystrokes k1
+            JOIN keystrokes k2
+                ON k1.session_id = k2.session_id
+                AND k1.sequence_num + 1 = k2.sequence_num
+                AND k1.word_index = k2.word_index
+            WHERE k1.intended_key NOT IN ({placeholders})
+              AND k2.intended_key NOT IN ({placeholders})
+            GROUP BY bigram
+            HAVING COUNT(*) >= 3
+            ORDER BY errors * 1.0 / COUNT(*) DESC""",
+        excluded + excluded,
+    ).fetchall()
+
+    bigrams = []
+    total_occurrences_sum = 0
+    for r in rows:
+        total = r["total_occurrences"]
+        errors = r["errors"]
+        total_occurrences_sum += total
+        bigrams.append({
+            "bigram": r["bigram"],
+            "total_occurrences": total,
+            "errors": errors,
+            "error_rate": round((errors / total) * 100, 2) if total > 0 else 0,
+            "avg_interkey_latency_ms": r["avg_interkey_latency_ms"],
+        })
+
+    return {
+        "bigrams": bigrams,
+        "total_bigrams_analysed": total_occurrences_sum,
+        "total_unique_bigrams": len(bigrams),
         "total_sessions": total_sessions,
     }
 

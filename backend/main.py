@@ -4,7 +4,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import sqlite3
 
-from database import get_db, init_db, create_session, get_all_sessions, get_key_stats
+from database import get_db, init_db, create_session, get_all_sessions, get_key_stats, get_bigram_stats
 from models import SessionCreate
 
 app = FastAPI(title="Typing Test API", version="1.0")
@@ -71,6 +71,12 @@ def list_sessions(db: sqlite3.Connection = Depends(get_db_dep)):
 def key_stats(db: sqlite3.Connection = Depends(get_db_dep)):
     """Return per-key statistics sorted by error rate (worst first)."""
     return get_key_stats(db)
+
+
+@app.get("/api/stats/bigrams")
+def bigram_stats(db: sqlite3.Connection = Depends(get_db_dep)):
+    """Return bigram (key-pair) statistics sorted by error rate (worst first)."""
+    return get_bigram_stats(db)
 
 
 # ─── Run directly ───────────────────────────────────────────────────
