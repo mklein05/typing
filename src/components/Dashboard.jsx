@@ -3,6 +3,7 @@ import KeyStatsChart from './KeyStatsChart';
 import KeyStatsTable from './KeyStatsTable';
 import BigramChart from './BigramChart';
 import BigramTable from './BigramTable';
+import KeyboardHeatmap from './KeyboardHeatmap';
 
 const KEYS_API = 'http://localhost:8000/api/stats/keys';
 const BIGRAMS_API = 'http://localhost:8000/api/stats/bigrams';
@@ -11,7 +12,7 @@ const BIGRAMS_API = 'http://localhost:8000/api/stats/bigrams';
  * Dashboard — fetches per-key and bigram stats from the backend and renders
  * summary cards, bar charts of worst keys/bigrams, and sortable tables.
  */
-export default function Dashboard({ onBackToTest }) {
+export default function Dashboard({ onBackToTest, onStartPractice }) {
   const [data, setData] = useState(null);              // key stats API response
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -19,6 +20,9 @@ export default function Dashboard({ onBackToTest }) {
   const [bigramData, setBigramData] = useState(null);  // bigram API response
   const [bigramLoading, setBigramLoading] = useState(true);
   const [bigramError, setBigramError] = useState(null);
+
+  const [practiceLoading, setPracticeLoading] = useState(false);
+  const [practiceError, setPracticeError] = useState(null);
 
   /** Fetch both key stats and bigrams in parallel. */
   function fetchStats() {
@@ -56,6 +60,30 @@ export default function Dashboard({ onBackToTest }) {
   useEffect(() => {
     fetchStats();
   }, []);
+
+  /** Fetch practice test from backend and switch to practice mode. */
+  function handlePractice() {
+    setPracticeLoading(true);
+    setPracticeError(null);
+
+    fetch('http://localhost:8000/api/practice/generate?count=10&word_count=35')
+      .then((res) => {
+        if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+        return res.json();
+      })
+      .then((json) => {
+        setPracticeLoading(false);
+        if (json.error) {
+          setPracticeError(json.error);
+        } else {
+          onStartPractice(json);
+        }
+      })
+      .catch((err) => {
+        setPracticeLoading(false);
+        setPracticeError(err.message);
+      });
+  }
 
   // ─── Loading state ──────────────────────────────────────────────
   if (loading) {
@@ -160,6 +188,34 @@ export default function Dashboard({ onBackToTest }) {
               )}
             </p>
           </div>
+        </div>
+
+        {/* Practice button */}
+        <div className="mb-8">
+          <button
+            onClick={handlePractice}
+            disabled={practiceLoading || total_sessions === 0}
+            title={total_sessions === 0 ? 'Complete at least one test first.' : undefined}
+            className={`px-6 py-3 font-bold rounded-lg transition-colors text-slate-900 ${
+              total_sessions === 0
+                ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                : practiceLoading
+                  ? 'bg-emerald-600 cursor-wait'
+                  : 'bg-emerald-500 hover:bg-emerald-400'
+            }`}
+          >
+            {practiceLoading ? 'Generating...' : '🎯 Practice My Weaknesses'}
+          </button>
+          {practiceError && (
+            <p className="text-red-400 text-sm mt-2 font-mono">
+              {practiceError}
+            </p>
+          )}
+        </div>
+
+        {/* Keyboard heatmap */}
+        <div className="mb-8">
+          <KeyboardHeatmap keys={keys} />
         </div>
 
         {/* Bar chart */}

@@ -6,6 +6,7 @@ import sqlite3
 
 from database import get_db, init_db, create_session, get_all_sessions, get_key_stats, get_bigram_stats
 from models import SessionCreate
+from practice import generate_practice
 
 app = FastAPI(title="Typing Test API", version="1.0")
 
@@ -77,6 +78,16 @@ def key_stats(db: sqlite3.Connection = Depends(get_db_dep)):
 def bigram_stats(db: sqlite3.Connection = Depends(get_db_dep)):
     """Return bigram (key-pair) statistics sorted by error rate (worst first)."""
     return get_bigram_stats(db)
+
+
+@app.get("/api/practice/generate")
+def practice_generate(
+    count: int = 10,
+    word_count: int = 35,
+    db: sqlite3.Connection = Depends(get_db_dep),
+):
+    """Generate a practice test targeting the user's weakest bigrams."""
+    return generate_practice(db, count=count, word_count=word_count)
 
 
 # ─── Run directly ───────────────────────────────────────────────────

@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
+import PracticeBanner from './PracticeBanner';
 
 // ─── WORD LIST (200+ common English words) ────────────────────────────
 const WORD_BANK = [
@@ -49,6 +50,7 @@ const WORD_BANK = [
 
 // How many words to pick per test
 const WORDS_PER_TEST = 40;
+const WORD_COUNT_OPTIONS = [10, 25, 40, 60, 100];
 
 // Pick N random words from the bank
 function pickWords(count) {
@@ -56,7 +58,14 @@ function pickWords(count) {
   return shuffled.slice(0, count);
 }
 
-export default function TypingTest({ onViewDashboard }) {
+export default function TypingTest({
+  onViewDashboard,
+  mode = 'normal',
+  practiceWords = [],
+  drillText = '',
+  targetedBigrams = [],
+  onBackToDashboard,
+}) {
   // ─── Refs (don't trigger re-renders on every keystroke) ──────────
   const keystrokesRef = useRef([]);
   const startTimeRef = useRef(null);
@@ -64,9 +73,21 @@ export default function TypingTest({ onViewDashboard }) {
   const wordStatusesRef = useRef([]);   // mirrors wordStatuses state for sync access in callbacks
   const typedWordsRef = useRef([]);     // stores what user typed per completed word index
   const prevWpmRef = useRef(0);        // tracks previous WPM for pulse detection
+  const wordsContainerRef = useRef(null); // ref for measuring word rows
+
+  // ─── Scrolling viewport (3 rows max) ──────────────────────────────
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(null); // null = auto
 
   // ─── State ────────────────────────────────────────────────────────
-  const [words, setWords] = useState(() => pickWords(WORDS_PER_TEST));
+  const isPractice = mode === 'practice';
+  const [wordCount, setWordCount] = useState(WORDS_PER_TEST);
+  const initialWords = isPractice && practiceWords.length > 0
+    ? practiceWords
+    : pickWords(wordCount);
+
+  const [words, setWords] = useState(initialWords);
+  const [drillMode, setDrillMode] = useState(false);   // drill sub-mode toggle
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [userInput, setUserInput] = useState('');          // typed chars for current word
   const [testState, setTestState] = useState('idle');       // 'idle' | 'running' | 'finished'
@@ -88,6 +109,51 @@ export default function TypingTest({ onViewDashboard }) {
   useEffect(() => {
     inputRef.current?.focus();
   }, [testState]);
+
+  // ─── Scrolling 3-row viewport ────────────────────────────────────
+  useLayoutEffect(() => {
+    const container = wordsContainerRef.current;
+    if (!container) return;
+
+    // Measure immediately after layout
+    const children = container.querySelectorAll(':scope > span');
+    if (children.length === 0) return;
+
+    // Group words by their vertical position (offsetTop)
+    const rowTops = [];
+    const rowIndices = []; // start index of each row
+    let lastTop = -1;
+    for (let i = 0; i < children.length; i++) {
+      const top = children[i].offsetTop;
+      if (top !== lastTop) {
+        rowTops.push(top);
+        rowIndices.push(i);
+        lastTop = top;
+      }
+    }
+
+    // Calculate row height from first two rows (or estimate from first child)
+    const rowHeight = rowTops.length >= 2
+      ? rowTops[1] - rowTops[0]
+      : children[0].offsetHeight + 8; // gap-y-2 ≈ 8px
+
+    if (rowHeight <= 0) return;
+
+    // Find which row the current word is on
+    let activeRow = 0;
+    for (let r = rowIndices.length - 1; r >= 0; r--) {
+      if (currentWordIndex >= rowIndices[r]) {
+        activeRow = r;
+        break;
+      }
+    }
+
+    // If the active row is beyond the 3rd visible row, shift up
+    // Show activeRow at the bottom (3rd position), so offset = (activeRow - 2) rows
+    const offset = Math.max(0, activeRow - 1) * rowHeight;
+    setScrollOffset(offset);
+    setViewportHeight(3 * rowHeight);
+  }, [words, currentWordIndex, testState]);
 
   // ─── Live WPM / timer ticker ─────────────────────────────────────
   useEffect(() => {
@@ -398,7 +464,8 @@ export default function TypingTest({ onViewDashboard }) {
     typedWordsRef.current = [];
     startTimeRef.current = null;
     prevWpmRef.current = 0;
-    setWords(pickWords(WORDS_PER_TEST));
+    setWords(isPractice && practiceWords.length > 0 ? practiceWords : pickWords(wordCount));
+    setDrillMode(false);
     setCurrentWordIndex(0);
     setUserInput('');
     setTestState('idle');
@@ -412,7 +479,43 @@ export default function TypingTest({ onViewDashboard }) {
     setResultData(null);
     setCachedStats(null);
     setPostStatus('idle');
-  }, []);
+  }, [isPractice, practiceWords, wordCount]);
+
+  // ─── Toggle drill mode (practice only) ────────────────────────────
+  const toggleDrillMode = useCallback(() => {
+    if (!isPractice) return;
+    setDrillMode(prev => {
+      const next = !prev;
+      // Swap words: drill words or practice words
+      if (next && drillText) {
+        // Split drill text by double-space, then by single space
+        const drillWords = drillText.split('  ').flatMap(group => group.trim().split(' ')).filter(Boolean);
+        setWords(drillWords);
+      } else {
+        setWords(practiceWords);
+      }
+      // Reset test state
+      keystrokesRef.current = [];
+      wordStatusesRef.current = [];
+      typedWordsRef.current = [];
+      startTimeRef.current = null;
+      prevWpmRef.current = 0;
+      setCurrentWordIndex(0);
+      setUserInput('');
+      setTestState('idle');
+      setWordStatuses([]);
+      setTypedWords([]);
+      setLiveWpm(0);
+      setWpmPulseKey(0);
+      setLiveAccuracy(100);
+      setLiveWordAccuracy(100);
+      setElapsed(0);
+      setResultData(null);
+      setCachedStats(null);
+      setPostStatus('idle');
+      return next;
+    });
+  }, [isPractice, drillText, practiceWords]);
 
   // ─── Render ───────────────────────────────────────────────────────
 
@@ -545,10 +648,22 @@ export default function TypingTest({ onViewDashboard }) {
     );
   };
 
-  // --- Render word rows (wrap words naturally) ---
+  // --- Render word rows (wrap words naturally, 3 rows max) ---
   const renderWords = () => (
-    <div className="flex flex-wrap gap-x-3 gap-y-2 justify-center text-2xl font-mono leading-relaxed max-w-3xl mx-auto select-none">
-      {words.map((word, i) => renderWord(word, i))}
+    <div
+      className="overflow-hidden max-w-3xl mx-auto select-none"
+      style={{ height: viewportHeight != null ? `${viewportHeight}px` : 'auto' }}
+    >
+      <div
+        ref={wordsContainerRef}
+        className="flex flex-wrap gap-x-3 gap-y-2 justify-center text-2xl font-mono leading-relaxed"
+        style={{
+          transform: `translateY(-${scrollOffset}px)`,
+          transition: testState === 'running' ? 'transform 0.3s ease' : 'none',
+        }}
+      >
+        {words.map((word, i) => renderWord(word, i))}
+      </div>
     </div>
   );
 
@@ -632,6 +747,13 @@ export default function TypingTest({ onViewDashboard }) {
           <div className="text-green-500 text-sm">✓ Results saved</div>
         )}
 
+        {/* Practice-specific messaging */}
+        {isPractice && (
+          <p className="text-slate-400 text-sm max-w-md text-center">
+            Practice complete! Return to Dashboard to see if your bigram stats improved.
+          </p>
+        )}
+
         <div className="flex gap-4 mt-4">
           <button
             onClick={restartTest}
@@ -639,12 +761,21 @@ export default function TypingTest({ onViewDashboard }) {
           >
             Try Again
           </button>
-          <button
-            onClick={onViewDashboard || (() => alert('Dashboard coming soon'))}
-            className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold rounded-lg transition-colors"
-          >
-            View Dashboard
-          </button>
+          {isPractice && onBackToDashboard ? (
+            <button
+              onClick={onBackToDashboard}
+              className="px-6 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold rounded-lg transition-colors"
+            >
+              Return to Dashboard
+            </button>
+          ) : (
+            <button
+              onClick={onViewDashboard || (() => alert('Dashboard coming soon'))}
+              className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold rounded-lg transition-colors"
+            >
+              View Dashboard
+            </button>
+          )}
         </div>
       </div>
     );
@@ -653,7 +784,7 @@ export default function TypingTest({ onViewDashboard }) {
   // ─── Main render ──────────────────────────────────────────────────
   return (
     <div
-      className="min-h-screen bg-slate-950 flex flex-col items-center justify-center px-4 py-8"
+      className="flex-1 flex flex-col items-center justify-start pt-12 px-4 pb-4"
       onClick={() => inputRef.current?.focus()}
     >
       {/* Hidden input to capture keystrokes */}
@@ -672,6 +803,37 @@ export default function TypingTest({ onViewDashboard }) {
         onChange={() => {}} // keep React happy with readOnly
       />
 
+      {/* Practice banner */}
+      {isPractice && testState !== 'finished' && (
+        <PracticeBanner targetedBigrams={targetedBigrams} />
+      )}
+
+      {/* Drill mode toggle */}
+      {isPractice && drillText && testState !== 'finished' && (
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => drillMode && toggleDrillMode()}
+            className={`px-4 py-1.5 rounded-lg text-sm font-mono font-bold transition-colors ${
+              !drillMode
+                ? 'bg-amber-500 text-slate-900'
+                : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+            }`}
+          >
+            Words
+          </button>
+          <button
+            onClick={() => !drillMode && toggleDrillMode()}
+            className={`px-4 py-1.5 rounded-lg text-sm font-mono font-bold transition-colors ${
+              drillMode
+                ? 'bg-amber-500 text-slate-900'
+                : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+            }`}
+          >
+            Drills
+          </button>
+        </div>
+      )}
+
       {testState !== 'finished' && (
         <>
           {renderLiveWpm()}
@@ -681,6 +843,29 @@ export default function TypingTest({ onViewDashboard }) {
           <p className={`text-slate-500 mt-8 text-sm ${testState === 'idle' ? '' : 'invisible'}`}>
             Start typing to begin the test...
           </p>
+
+          {/* Word count selector — idle state only, not in practice mode */}
+          {testState === 'idle' && !isPractice && (
+            <div className="flex items-center gap-2 mt-3">
+              <span className="text-slate-500 text-xs font-mono">Words:</span>
+              {WORD_COUNT_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  onClick={() => {
+                    setWordCount(n);
+                    setWords(pickWords(n));
+                  }}
+                  className={`px-3 py-1 rounded-md text-xs font-mono font-bold transition-colors ${
+                    wordCount === n
+                      ? 'bg-yellow-500 text-slate-900'
+                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          )}
         </>
       )}
 
