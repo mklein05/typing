@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
-import PracticeBanner from './PracticeBanner';
+import { apiFetch } from '../api';
 
 // ─── WORD LIST (200+ common English words) ────────────────────────────
 const WORD_BANK = [
@@ -88,6 +88,40 @@ export default function TypingTest({
 
   const [words, setWords] = useState(initialWords);
   const [drillMode, setDrillMode] = useState(false);   // drill sub-mode toggle
+
+  // ─── Reset words when mode changes (route switch) ─────────────────
+  const prevModeRef = useRef(mode);
+  useEffect(() => {
+    if (mode === prevModeRef.current) return;
+    prevModeRef.current = mode;
+
+    const newWords = isPractice && practiceWords.length > 0
+      ? practiceWords
+      : pickWords(wordCount);
+    setWords(newWords);
+
+    // Reset all test state
+    keystrokesRef.current = [];
+    wordStatusesRef.current = [];
+    typedWordsRef.current = [];
+    startTimeRef.current = null;
+    prevWpmRef.current = 0;
+    setCurrentWordIndex(0);
+    setUserInput('');
+    setTestState('idle');
+    setWordStatuses([]);
+    setTypedWords([]);
+    setLiveWpm(0);
+    setWpmPulseKey(0);
+    setLiveAccuracy(100);
+    setLiveWordAccuracy(100);
+    setElapsed(0);
+    setResultData(null);
+    setCachedStats(null);
+    setPostStatus('idle');
+    setDrillMode(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [userInput, setUserInput] = useState('');          // typed chars for current word
   const [testState, setTestState] = useState('idle');       // 'idle' | 'running' | 'finished'
@@ -249,9 +283,8 @@ export default function TypingTest({
       keystrokes,
     };
 
-    fetch('http://localhost:8000/api/sessions', {
+    apiFetch('/api/sessions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
       .then(res => {
@@ -368,7 +401,48 @@ export default function TypingTest({
       e.preventDefault();
 
       if (userInput.length === 0) {
-        // Cannot backspace into previous word
+        // ── Go back to previous word if it was incorrect ─────────
+        const prevIdx = currentWordIndex - 1;
+        if (
+          prevIdx >= 0 &&
+          wordStatusesRef.current[prevIdx] === 'incorrect'
+        ) {
+          const prevTyped = typedWordsRef.current[prevIdx] || '';
+
+          // Record the go-back keystroke
+          keystrokesRef.current.push({
+            sequence: seq,
+            key: 'Backspace',
+            intended: 'Backspace',
+            correct: false,
+            pressed_at_ms: pressTime,
+            released_at_ms: pressTime,
+            word: words[prevIdx],
+            word_index: prevIdx,
+            position_in_word: prevTyped.length,
+          });
+
+          // Clear the incorrect status and typed record for that word,
+          // then jump back to it with the previously typed text
+          setWordStatuses(prev => {
+            const next = [...prev];
+            next[prevIdx] = null;
+            wordStatusesRef.current = next;
+            return next;
+          });
+          setTypedWords(prev => {
+            const next = [...prev];
+            next[prevIdx] = undefined;
+            typedWordsRef.current = next;
+            return next;
+          });
+          setCurrentWordIndex(prevIdx);
+          setUserInput(prevTyped);
+          updateLiveStats();
+          return;
+        }
+
+        // Otherwise, can't go any further back
         return;
       }
 
@@ -437,7 +511,7 @@ export default function TypingTest({
       });
       finishTest();
     }
-  }, [testState, currentWordIndex, currentWord, userInput, advanceWord, updateLiveStats, words.length, finishTest]);
+  }, [testState, currentWordIndex, currentWord, userInput, words, advanceWord, updateLiveStats, words.length, finishTest]);
 
   // ─── KEYUP handler — updates released_at_ms on last keystroke ────
   const handleKeyUp = useCallback((e) => {
@@ -803,37 +877,6 @@ export default function TypingTest({
         onChange={() => {}} // keep React happy with readOnly
       />
 
-      {/* Practice banner */}
-      {isPractice && testState !== 'finished' && (
-        <PracticeBanner targetedBigrams={targetedBigrams} />
-      )}
-
-      {/* Drill mode toggle */}
-      {isPractice && drillText && testState !== 'finished' && (
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={() => drillMode && toggleDrillMode()}
-            className={`px-4 py-1.5 rounded-lg text-sm font-mono font-bold transition-colors ${
-              !drillMode
-                ? 'bg-amber-500 text-slate-900'
-                : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-            }`}
-          >
-            Words
-          </button>
-          <button
-            onClick={() => !drillMode && toggleDrillMode()}
-            className={`px-4 py-1.5 rounded-lg text-sm font-mono font-bold transition-colors ${
-              drillMode
-                ? 'bg-amber-500 text-slate-900'
-                : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-            }`}
-          >
-            Drills
-          </button>
-        </div>
-      )}
-
       {testState !== 'finished' && (
         <>
           {renderLiveWpm()}
@@ -841,7 +884,7 @@ export default function TypingTest({
           {renderProgressBar()}
           {renderWords()}
           <p className={`text-slate-500 mt-8 text-sm ${testState === 'idle' ? '' : 'invisible'}`}>
-            Start typing to begin the test...
+            {isPractice ? 'Start typing to begin the practice...' : 'Start typing to begin the test...'}
           </p>
 
           {/* Word count selector — idle state only, not in practice mode */}
@@ -864,6 +907,32 @@ export default function TypingTest({
                   {n}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Drill mode toggle — below the words area, practice only */}
+          {isPractice && drillText && (
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => drillMode && toggleDrillMode()}
+                className={`px-4 py-1.5 rounded-lg text-sm font-mono font-bold transition-colors ${
+                  !drillMode
+                    ? 'bg-amber-500 text-slate-900'
+                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                }`}
+              >
+                Words
+              </button>
+              <button
+                onClick={() => !drillMode && toggleDrillMode()}
+                className={`px-4 py-1.5 rounded-lg text-sm font-mono font-bold transition-colors ${
+                  drillMode
+                    ? 'bg-amber-500 text-slate-900'
+                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                }`}
+              >
+                Drills
+              </button>
             </div>
           )}
         </>

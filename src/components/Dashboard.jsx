@@ -4,9 +4,10 @@ import KeyStatsTable from './KeyStatsTable';
 import BigramChart from './BigramChart';
 import BigramTable from './BigramTable';
 import KeyboardHeatmap from './KeyboardHeatmap';
+import { apiFetch } from '../api';
 
-const KEYS_API = 'http://localhost:8000/api/stats/keys';
-const BIGRAMS_API = 'http://localhost:8000/api/stats/bigrams';
+const KEYS_API = '/api/stats/keys';
+const BIGRAMS_API = '/api/stats/bigrams';
 
 /**
  * Dashboard — fetches per-key and bigram stats from the backend and renders
@@ -24,6 +25,9 @@ export default function Dashboard({ onBackToTest, onStartPractice }) {
   const [practiceLoading, setPracticeLoading] = useState(false);
   const [practiceError, setPracticeError] = useState(null);
 
+  const [keysExpanded, setKeysExpanded] = useState(false);
+  const [bigramsExpanded, setBigramsExpanded] = useState(false);
+
   /** Fetch both key stats and bigrams in parallel. */
   function fetchStats() {
     setLoading(true);
@@ -32,11 +36,11 @@ export default function Dashboard({ onBackToTest, onStartPractice }) {
     setBigramError(null);
 
     Promise.all([
-      fetch(KEYS_API).then((res) => {
+      apiFetch(KEYS_API).then((res) => {
         if (!res.ok) throw new Error(`Keys: ${res.status}`);
         return res.json();
       }),
-      fetch(BIGRAMS_API).then((res) => {
+      apiFetch(BIGRAMS_API).then((res) => {
         if (!res.ok) throw new Error(`Bigrams: ${res.status}`);
         return res.json();
       }),
@@ -66,7 +70,7 @@ export default function Dashboard({ onBackToTest, onStartPractice }) {
     setPracticeLoading(true);
     setPracticeError(null);
 
-    fetch('http://localhost:8000/api/practice/generate?count=10&word_count=35')
+    apiFetch('/api/practice/generate?count=10&word_count=35')
       .then((res) => {
         if (!res.ok) throw new Error(`Server responded with ${res.status}`);
         return res.json();
@@ -146,15 +150,27 @@ export default function Dashboard({ onBackToTest, onStartPractice }) {
   return (
     <div className="min-h-screen bg-slate-950 px-4 py-8">
       <div className="max-w-5xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-3xl font-bold text-slate-200">Dashboard</h1>
+        {/* Practice button */}
+        <div className="mb-8">
           <button
-            onClick={onBackToTest}
-            className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold rounded-lg transition-colors"
+            onClick={handlePractice}
+            disabled={practiceLoading || total_sessions === 0}
+            title={total_sessions === 0 ? 'Complete at least one test first.' : undefined}
+            className={`px-6 py-3 font-bold rounded-lg transition-colors text-slate-900 ${
+              total_sessions === 0
+                ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                : practiceLoading
+                  ? 'bg-emerald-600 cursor-wait'
+                  : 'bg-emerald-500 hover:bg-emerald-400'
+            }`}
           >
-            Back to Test
+            {practiceLoading ? 'Generating...' : 'Practice My Weaknesses'}
           </button>
+          {practiceError && (
+            <p className="text-red-400 text-sm mt-2 font-mono">
+              {practiceError}
+            </p>
+          )}
         </div>
 
         {/* Summary cards */}
@@ -190,28 +206,7 @@ export default function Dashboard({ onBackToTest, onStartPractice }) {
           </div>
         </div>
 
-        {/* Practice button */}
-        <div className="mb-8">
-          <button
-            onClick={handlePractice}
-            disabled={practiceLoading || total_sessions === 0}
-            title={total_sessions === 0 ? 'Complete at least one test first.' : undefined}
-            className={`px-6 py-3 font-bold rounded-lg transition-colors text-slate-900 ${
-              total_sessions === 0
-                ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                : practiceLoading
-                  ? 'bg-emerald-600 cursor-wait'
-                  : 'bg-emerald-500 hover:bg-emerald-400'
-            }`}
-          >
-            {practiceLoading ? 'Generating...' : '🎯 Practice My Weaknesses'}
-          </button>
-          {practiceError && (
-            <p className="text-red-400 text-sm mt-2 font-mono">
-              {practiceError}
-            </p>
-          )}
-        </div>
+
 
         {/* Keyboard heatmap */}
         <div className="mb-8">
@@ -225,12 +220,28 @@ export default function Dashboard({ onBackToTest, onStartPractice }) {
           </div>
         )}
 
-        {/* Full table */}
+        {/* Full table — collapsible */}
         <div className="mb-8">
-          <h3 className="text-slate-200 text-lg font-bold mb-4">
-            All Keys ({keys.length})
-          </h3>
-          <KeyStatsTable keys={keys} />
+          <button
+            onClick={() => setKeysExpanded(prev => !prev)}
+            className="flex items-center gap-3 w-full text-left group"
+          >
+            <span className={`flex items-center justify-center w-6 h-6 rounded-md bg-slate-800 group-hover:bg-slate-700 transition-colors shrink-0`}>
+              <svg
+                className={`w-4 h-4 text-slate-400 group-hover:text-amber-400 transition-transform duration-200 ${keysExpanded ? 'rotate-90' : ''}`}
+                fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </span>
+            <span className="text-slate-200 text-lg font-bold group-hover:text-amber-400 transition-colors">
+              All Keys ({keys.length})
+            </span>
+            <span className="text-slate-600 text-xs font-mono ml-auto">
+              {keysExpanded ? 'Collapse' : 'Expand'}
+            </span>
+          </button>
+          {keysExpanded && <div className="mt-3"><KeyStatsTable keys={keys} /></div>}
         </div>
 
         {/* ══════════════════════════════════════════════════════════
@@ -276,36 +287,30 @@ export default function Dashboard({ onBackToTest, onStartPractice }) {
                 Weakest Key Transitions
               </h3>
               <BigramChart bigrams={bigramData.bigrams.slice(0, 10)} />
-              {(() => {
-                const worst = bigramData.bigrams[0];
-                const allLatencies = bigramData.bigrams.flatMap(
-                  (b) => Array(b.total_occurrences).fill(b.avg_interkey_latency_ms)
-                );
-                const avgLatency = allLatencies.length > 0
-                  ? Math.round(allLatencies.reduce((s, v) => s + v, 0) / allLatencies.length)
-                  : 0;
-                const diff = worst.avg_interkey_latency_ms - avgLatency;
-                const a = worst.bigram[0] || '';
-                const b = worst.bigram[1] || '';
-                return (
-                  <p className="text-sm text-slate-400 italic mt-3">
-                    Your slowest transition is {a} → {b} at{' '}
-                    {Math.round(worst.avg_interkey_latency_ms)}ms
-                    {diff > 0
-                      ? ` — that's ${Math.round(diff)}ms slower than your average.`
-                      : '.'}{' '}
-                    These two keys may share the same finger.
-                  </p>
-                );
-              })()}
             </div>
 
-            {/* Bigram table */}
+            {/* Bigram table — collapsible */}
             <div>
-              <h3 className="text-slate-200 text-lg font-bold mb-4">
-                All Bigrams ({bigramData.bigrams.length})
-              </h3>
-              <BigramTable bigrams={bigramData.bigrams} />
+              <button
+                onClick={() => setBigramsExpanded(prev => !prev)}
+                className="flex items-center gap-3 w-full text-left group"
+              >
+                <span className={`flex items-center justify-center w-6 h-6 rounded-md bg-slate-800 group-hover:bg-slate-700 transition-colors shrink-0`}>
+                  <svg
+                    className={`w-4 h-4 text-slate-400 group-hover:text-amber-400 transition-transform duration-200 ${bigramsExpanded ? 'rotate-90' : ''}`}
+                    fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </span>
+                <span className="text-slate-200 text-lg font-bold group-hover:text-amber-400 transition-colors">
+                  All Bigrams ({bigramData.bigrams.length})
+                </span>
+                <span className="text-slate-600 text-xs font-mono ml-auto">
+                  {bigramsExpanded ? 'Collapse' : 'Expand'}
+                </span>
+              </button>
+              {bigramsExpanded && <div className="mt-3"><BigramTable bigrams={bigramData.bigrams} /></div>}
             </div>
           </>
         )}

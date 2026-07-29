@@ -261,12 +261,7 @@ export default function KeyboardHeatmap({ keys }) {
   if (!keys || keys.length === 0) {
     return (
       <div className="bg-slate-900 rounded-xl p-6 text-center">
-        <h3 className="text-slate-200 text-lg font-bold mb-1">
-          Keyboard Heatmap
-        </h3>
-        <p className="text-slate-500 text-xs mb-4">
-          Hover over keys to see detailed stats. Toggle to view by error rate or latency.
-        </p>
+
 
         {/* Render muted keyboard */}
         <div className="flex flex-col items-center gap-1.5">
@@ -297,14 +292,7 @@ export default function KeyboardHeatmap({ keys }) {
     <div className="bg-slate-900 rounded-xl p-6 relative">
       {/* Header + toggle */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <div>
-          <h3 className="text-slate-200 text-lg font-bold">
-            Keyboard Heatmap
-          </h3>
-          <p className="text-slate-500 text-xs">
-            Hover over keys to see detailed stats. Toggle to view by error rate or latency.
-          </p>
-        </div>
+
 
         <div className="flex gap-1 bg-slate-800 rounded-lg p-0.5">
           <button

@@ -127,6 +127,7 @@ def generate_practice(
     db: sqlite3.Connection,
     count: int = 10,
     word_count: int = 35,
+    user_id: str = None,
 ) -> dict:
     """Generate a targeted practice test based on the user's weakest bigrams.
 
@@ -134,12 +135,13 @@ def generate_practice(
         db: An open SQLite connection.
         count: Number of weak bigrams to target (default 10).
         word_count: Number of words in the generated test (default 35).
+        user_id: Filter stats to this user.
 
     Returns:
         A dict with targeted_bigrams, practice_words, drill_text, and metadata.
     """
     # ── Step 1: Get weak bigrams ──────────────────────────────────
-    bigram_stats = get_bigram_stats(db)
+    bigram_stats = get_bigram_stats(db, user_id=user_id)
     all_bigrams = bigram_stats.get("bigrams", [])
     total_sessions = bigram_stats.get("total_sessions", 0)
 
