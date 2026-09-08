@@ -81,6 +81,10 @@ export default function TypingTest({
 
   // ─── State ────────────────────────────────────────────────────────
   const isPractice = mode === 'practice';
+  const [textMode, setTextMode] = useState('words'); // 'words' | 'quotes'
+  const [quoteIndex, setQuoteIndex] = useState(0);    // which quote set we're on
+  const [quoteTotal, setQuoteTotal] = useState(0);    // total quotes available
+  const [quotesLoading, setQuotesLoading] = useState(false);
   const [wordCount, setWordCount] = useState(WORDS_PER_TEST);
   const initialWords = isPractice && practiceWords.length > 0
     ? practiceWords
@@ -89,15 +93,43 @@ export default function TypingTest({
   const [words, setWords] = useState(initialWords);
   const [drillMode, setDrillMode] = useState(false);   // drill sub-mode toggle
 
+  // ─── Fetch quotes from backend ────────────────────────────────────
+  const [quoteCount, setQuoteCount] = useState(5);
+  const QUOTE_COUNT_OPTIONS = [1, 3, 5, 10];
+
+  const fetchQuotes = useCallback((countOverride) => {
+    if (isPractice) return;
+    const count = countOverride ?? quoteCount;
+    setQuotesLoading(true);
+    apiFetch(`/api/quotes?count=${count}&category=seal`)
+      .then(res => res.json())
+      .then(json => {
+        setQuoteTotal(json.total_available || 0);
+        const quoteText = json.quotes.map(q => q.text).join(' ');
+        const quoteWords = quoteText.split(/\s+/);
+        setWords(quoteWords);
+        setQuoteIndex(1);
+        setQuotesLoading(false);
+      })
+      .catch(() => {
+        setWords(pickWords(wordCount));
+        setQuotesLoading(false);
+      });
+  }, [isPractice, quoteCount, wordCount]);
+
   // ─── Reset words when mode changes (route switch) ─────────────────
   const prevModeRef = useRef(mode);
   useEffect(() => {
     if (mode === prevModeRef.current) return;
     prevModeRef.current = mode;
 
-    const newWords = isPractice && practiceWords.length > 0
-      ? practiceWords
-      : pickWords(wordCount);
+    if (isPractice && practiceWords.length > 0) {
+      setWords(practiceWords);
+    } else if (textMode === 'quotes') {
+      fetchQuotes();
+    } else {
+      setWords(pickWords(wordCount));
+    }
     setWords(newWords);
 
     // Reset all test state
@@ -143,6 +175,13 @@ export default function TypingTest({
   useEffect(() => {
     inputRef.current?.focus();
   }, [testState]);
+
+  // ─── Initial quotes fetch on mount ───────────────────────────────
+  useEffect(() => {
+    if (textMode === 'quotes' && !isPractice && words.length === 0) {
+      fetchQuotes();
+    }
+  }, []);
 
   // ─── Scrolling 3-row viewport ────────────────────────────────────
   useLayoutEffect(() => {
@@ -538,7 +577,14 @@ export default function TypingTest({
     typedWordsRef.current = [];
     startTimeRef.current = null;
     prevWpmRef.current = 0;
-    setWords(isPractice && practiceWords.length > 0 ? practiceWords : pickWords(wordCount));
+    // Choose new words based on current mode
+    if (isPractice && practiceWords.length > 0) {
+      setWords(practiceWords);
+    } else if (textMode === 'quotes') {
+      fetchQuotes();
+    } else {
+      setWords(pickWords(wordCount));
+    }
     setDrillMode(false);
     setCurrentWordIndex(0);
     setUserInput('');
@@ -553,7 +599,37 @@ export default function TypingTest({
     setResultData(null);
     setCachedStats(null);
     setPostStatus('idle');
-  }, [isPractice, practiceWords, wordCount]);
+  }, [isPractice, practiceWords, wordCount, textMode, fetchQuotes]);
+
+  // ─── Switch between words / quotes text mode ─────────────────────
+  const handleTextModeChange = useCallback((newMode) => {
+    if (newMode === textMode || isPractice) return;
+    setTextMode(newMode);
+    // Reset everything for the new mode
+    keystrokesRef.current = [];
+    wordStatusesRef.current = [];
+    typedWordsRef.current = [];
+    startTimeRef.current = null;
+    prevWpmRef.current = 0;
+    setCurrentWordIndex(0);
+    setUserInput('');
+    setTestState('idle');
+    setWordStatuses([]);
+    setTypedWords([]);
+    setLiveWpm(0);
+    setWpmPulseKey(0);
+    setLiveAccuracy(100);
+    setLiveWordAccuracy(100);
+    setElapsed(0);
+    setResultData(null);
+    setCachedStats(null);
+    setPostStatus('idle');
+    if (newMode === 'quotes') {
+      fetchQuotes();
+    } else {
+      setWords(pickWords(wordCount));
+    }
+  }, [textMode, isPractice, fetchQuotes, wordCount]);
 
   // ─── Toggle drill mode (practice only) ────────────────────────────
   const toggleDrillMode = useCallback(() => {
@@ -828,6 +904,13 @@ export default function TypingTest({
           </p>
         )}
 
+        {/* Quotes-specific messaging */}
+        {textMode === 'quotes' && !isPractice && (
+          <p className="text-slate-400 text-sm max-w-md text-center">
+            🦭 Seal Fact {quoteIndex} of {quoteTotal > 0 ? quoteTotal : '?'}
+          </p>
+        )}
+
         <div className="flex gap-4 mt-4">
           <button
             onClick={restartTest}
@@ -879,6 +962,32 @@ export default function TypingTest({
 
       {testState !== 'finished' && (
         <>
+          {/* Mode selector — not in practice mode */}
+          {!isPractice && (
+            <div className="flex gap-0 mb-4">
+              <button
+                onClick={() => handleTextModeChange('words')}
+                className={`px-4 py-1.5 rounded-l-lg text-xs font-mono font-bold transition-colors border border-slate-700 ${
+                  textMode === 'words'
+                    ? 'bg-slate-700 text-slate-200'
+                    : 'bg-slate-800 text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Random Words
+              </button>
+              <button
+                onClick={() => handleTextModeChange('quotes')}
+                className={`px-4 py-1.5 rounded-r-lg text-xs font-mono font-bold transition-colors border border-l-0 border-slate-700 ${
+                  textMode === 'quotes'
+                    ? 'bg-slate-700 text-slate-200'
+                    : 'bg-slate-800 text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Quotes 🦭
+              </button>
+            </div>
+          )}
+
           {renderLiveWpm()}
           {renderStatsBar()}
           {renderProgressBar()}
@@ -887,19 +996,26 @@ export default function TypingTest({
             {isPractice ? 'Start typing to begin the practice...' : 'Start typing to begin the test...'}
           </p>
 
-          {/* Word count selector — idle state only, not in practice mode */}
+          {/* Word / Quote count selector — idle state only, not in practice mode */}
           {testState === 'idle' && !isPractice && (
             <div className="flex items-center gap-2 mt-3">
-              <span className="text-slate-500 text-xs font-mono">Words:</span>
-              {WORD_COUNT_OPTIONS.map((n) => (
+              <span className="text-slate-500 text-xs font-mono">
+                {textMode === 'quotes' ? 'Quotes:' : 'Words:'}
+              </span>
+              {(textMode === 'quotes' ? QUOTE_COUNT_OPTIONS : WORD_COUNT_OPTIONS).map((n) => (
                 <button
                   key={n}
                   onClick={() => {
-                    setWordCount(n);
-                    setWords(pickWords(n));
+                    if (textMode === 'quotes') {
+                      setQuoteCount(n);
+                      fetchQuotes(n);
+                    } else {
+                      setWordCount(n);
+                      setWords(pickWords(n));
+                    }
                   }}
                   className={`px-3 py-1 rounded-md text-xs font-mono font-bold transition-colors ${
-                    wordCount === n
+                    (textMode === 'quotes' ? quoteCount === n : wordCount === n)
                       ? 'bg-yellow-500 text-slate-900'
                       : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
                   }`}

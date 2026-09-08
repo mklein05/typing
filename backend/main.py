@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
 
-from database import get_db, init_db, create_session, get_all_sessions, get_key_stats, get_bigram_stats, get_user_username, set_user_username
+from database import get_db, init_db, create_session, get_all_sessions, get_key_stats, get_bigram_stats, get_user_username, set_user_username, get_quotes
 from models import SessionCreate
 from practice import generate_practice
 from auth import get_current_user
@@ -185,6 +185,18 @@ def set_username(
     finally:
         db.close()
     return {"username": username, "message": "Username set"}
+
+
+@app.get("/api/quotes")
+def get_quote_endpoint(
+    count: int = 10,
+    category: str = "seal",
+    difficulty: int | None = None,
+    db: sqlite3.Connection = Depends(get_db_dep),
+    user_id: str = Depends(get_current_user),
+):
+    """Return random seal-fact quotes for a typing session."""
+    return get_quotes(db, count=count, category=category, difficulty=difficulty)
 
 
 # ─── Run directly ───────────────────────────────────────────────────
