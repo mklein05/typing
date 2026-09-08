@@ -52,6 +52,8 @@ const WORD_BANK = [
 const WORDS_PER_TEST = 40;
 const WORD_COUNT_OPTIONS = [10, 25, 40, 60, 100];
 
+
+
 // Pick N random words from the bank
 function pickWords(count) {
   const shuffled = [...WORD_BANK].sort(() => Math.random() - 0.5);
@@ -74,6 +76,7 @@ export default function TypingTest({
   const typedWordsRef = useRef([]);     // stores what user typed per completed word index
   const prevWpmRef = useRef(0);        // tracks previous WPM for pulse detection
   const wordsContainerRef = useRef(null); // ref for measuring word rows
+  const [sealFrame, setSealFrame] = useState(0);
 
   // ─── Scrolling viewport (3 rows max) ──────────────────────────────
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -403,6 +406,8 @@ export default function TypingTest({
       return;
     }
 
+    setSealFrame(prev => (prev === 0 ? 1 : 0));
+
     const pressTime = startTimeRef.current ? Date.now() - startTimeRef.current : 0;
     const seq = keystrokesRef.current.length;
     const wordIdx = currentWordIndex;
@@ -599,6 +604,7 @@ export default function TypingTest({
     setResultData(null);
     setCachedStats(null);
     setPostStatus('idle');
+    setSealFrame(0);
   }, [isPractice, practiceWords, wordCount, textMode, fetchQuotes]);
 
   // ─── Switch between words / quotes text mode ─────────────────────
@@ -833,17 +839,39 @@ export default function TypingTest({
     );
   };
 
-  // --- Render live WPM (big, above stats) ---
+
+  // --- Render seal + live WPM side by side ---
   const renderLiveWpm = () => (
-    <div className="flex justify-center mb-3">
-      <span
-        key={wpmPulseKey}
-        className="text-7xl font-bold text-yellow-400 inline-block tabular-nums"
-        style={{ animation: 'wpm-pulse 0.4s ease' }}
-      >
-        {liveWpm}
-      </span>
-      <span className="text-2xl text-slate-500 font-mono self-end mb-2 ml-1">WPM</span>
+    <div className="flex items-center justify-center gap-6 mb-3">
+      {/* Animated Typing Seal */}
+      <div className="relative w-40 h-40 select-none pointer-events-none">
+        <img
+          src="/sealdown.png"
+          alt="Seal typing down"
+          className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-75 ${
+            sealFrame === 0 ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+        <img
+          src="/sealup.png"
+          alt="Seal typing up"
+          className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-75 ${
+            sealFrame === 1 ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      </div>
+
+      {/* WPM Readout */}
+      <div className="flex items-baseline">
+        <span
+          key={wpmPulseKey}
+          className="text-7xl font-bold text-yellow-400 inline-block tabular-nums"
+          style={{ animation: 'wpm-pulse 0.4s ease' }}
+        >
+          {liveWpm}
+        </span>
+        <span className="text-2xl text-slate-500 font-mono ml-2">WPM</span>
+      </div>
     </div>
   );
 
@@ -988,10 +1016,11 @@ export default function TypingTest({
             </div>
           )}
 
+
           {renderLiveWpm()}
-          {renderStatsBar()}
           {renderProgressBar()}
           {renderWords()}
+          {renderStatsBar()}
           <p className={`text-slate-500 mt-8 text-sm ${testState === 'idle' ? '' : 'invisible'}`}>
             {isPractice ? 'Start typing to begin the practice...' : 'Start typing to begin the test...'}
           </p>
