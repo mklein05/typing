@@ -22,6 +22,38 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ─── Environment variables ───────────────────────────────────────────────
+# Never commit real secrets. `.env.*` covers .env.local, .env.development,
+# .env.production, backend/.env and any future variant, at any depth.
+# Commit an `.env.example` (with blank values) to document what's needed.
 .env
-.env.production
+.env.*
+!.env.example
+
+# ─── Python ──────────────────────────────────────────────────────────────
+# Kept for optional tooling (the backend is Node/Express now).
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Local databases ─────────────────────────────────────────────────────
+# Local SQLite data, not source.
+# NOTE: these rules only stop NEW files being added. Files already committed
+# keep being tracked until removed from the index with:
+#   git rm --cached <path>
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
 
