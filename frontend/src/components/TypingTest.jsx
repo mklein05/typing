@@ -1052,7 +1052,7 @@ export default function TypingTest({
 
           {/* Drill mode toggle — below the words area, practice only */}
           {isPractice && drillText && (
-            <div className="flex gap-2 mt-4">
+            <div className="flex gap-2 mt-6">
               <button
                 onClick={() => drillMode && toggleDrillMode()}
                 className={`font-pixel px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${
