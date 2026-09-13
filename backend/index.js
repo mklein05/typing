@@ -102,7 +102,14 @@ app.post('/api/users/username', requireAuth, (req, res) => {
     return res.status(400).json({ detail: 'Username must be between 2 and 20 characters' });
   }
 
-  db.prepare('UPDATE users SET username = ? WHERE id = ?').run(username, req.userId);
+  // Upsert, not a plain UPDATE. The users row is only created when the first
+  // session is saved, so on a brand-new account the UPDATE matched 0 rows and
+  // silently discarded the username — the app then re-prompted on every load.
+  db.prepare(`
+    INSERT INTO users (id, username) VALUES (?, ?)
+    ON CONFLICT(id) DO UPDATE SET username = excluded.username
+  `).run(req.userId, username);
+
   res.json({ username, message: 'Username set' });
 });
 
