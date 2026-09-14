@@ -1,21 +1,28 @@
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 /**
- * Full-screen login page with Google OAuth button.
+ * Sign-in page. Rendered inside the app shell at /login, so guests can read
+ * what they'd gain and head back to the test without signing in.
  */
 export default function LoginPage() {
   const { signInWithGoogle } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <div className="min-h-screen theme-app flex flex-col items-center justify-center px-4">
       {/* Logo */}
-      <div className="w-16 h-16 theme-accent rounded-2xl flex items-center justify-center font-bold text-2xl mb-6">
-        T
+      <div className="w-50 h-50 rounded-2xl flex items-center justify-center font-bold text-2xl mb-6">
+        <img
+          src="/seallogo.png"
+          alt="Seal typing down"
+          className="w-full h-20 "
+        />
       </div>
 
-      <h1 className="text-3xl font-bold theme-text mb-2">typingSeal</h1>
-      <p className="theme-text-muted text-sm mb-10 max-w-xs text-center">
-        Improve your typing speed with personalised practice and detailed analytics.
+      <h1 className="text-3xl font-bold theme-text mb-2">Welcome to typingSeal.com!</h1>
+      <p className="theme-text-muted text-sm mb-5 max-w-xs text-center">
+        Log in to save your results and get access to personalised practice tests, or continue as a guest.
       </p>
 
       {/* Google sign-in button */}
@@ -43,6 +50,13 @@ export default function LoginPage() {
           />
         </svg>
         Sign in with Google
+      </button>
+
+      <button
+        onClick={() => navigate('/')}
+        className="mt-4 px-6 py-3 rounded-lg border border-slate-700 theme-text-soft font-pixel font-bold text-sm transition-colors hover:border-amber-500/60 hover:bg-slate-800"
+      >
+        Continue as guest →
       </button>
     </div>
   );

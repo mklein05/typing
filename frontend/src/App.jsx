@@ -1,27 +1,34 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import TypingTest from './components/TypingTest';
 import Dashboard from './components/Dashboard';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import UserMenu from './components/UserMenu';
+import LoginPage from './components/LoginPage';
 import { apiFetch } from './api';
 
 /** Header with logo, tab navigation, and user menu. */
 function Header({ practiceData, setPracticeData, practiceAvailable }) {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const path = location.pathname;
   const activeTab = path === '/practice' ? 'practice' : 'test';
 
+  // Practice is generated from your own bigram stats, so it can't work
+  // without an account — guests get locked out with a sign-in prompt.
   const tabs = [
     { key: 'test', label: 'Test', to: '/' },
     {
       key: 'practice',
       label: 'Practice',
       to: '/practice',
-      locked: !practiceAvailable,
+      locked: !user || !practiceAvailable,
+      lockReason: !user
+        ? 'Sign in to unlock personalised practice'
+        : 'Complete more typing tests to unlock practice',
     },
   ];
 
@@ -65,7 +72,7 @@ function Header({ practiceData, setPracticeData, practiceAvailable }) {
                 else navigate(tab.to);
               }}
               disabled={isLocked}
-              title={isLocked ? 'Complete more typing tests to unlock practice' : undefined}
+              title={isLocked ? tab.lockReason : undefined}
               className={`font-pixel px-4 py-1.5 rounded-md text-sm font-bold transition-colors capitalize ${
                 isLocked
                   ? 'theme-text-subtle cursor-not-allowed'
@@ -80,20 +87,32 @@ function Header({ practiceData, setPracticeData, practiceAvailable }) {
         })}
       </nav>
 
-      <UserMenu />
+      {user ? (
+        <UserMenu />
+      ) : (
+        <button
+          onClick={() => navigate('/login')}
+          className="font-pixel px-4 py-1.5 rounded-lg border border-slate-700 theme-text-soft text-sm font-bold transition-colors hover:border-amber-500/60 hover:bg-slate-800"
+        >
+          Sign in
+        </button>
+      )}
     </header>
   );
 }
 
 /** Pages — renders the correct component based on current route. */
-function Pages({ practiceData, setPracticeData }) {
+function Pages({ practiceData, setPracticeData, onSessionSaved }) {
+  const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Auto-fetch practice data if navigating directly to /practice
+  // Auto-fetch practice data if navigating directly to /practice.
+  // Guests have no stats to generate from — the request would just 401.
   const [autoLoading, setAutoLoading] = useState(false);
   const path = useLocation().pathname;
 
   useEffect(() => {
+    if (!user) return;
     if (path === '/practice' && !practiceData && !autoLoading) {
       setAutoLoading(true);
       apiFetch('/api/practice/generate?count=10&word_count=35')
@@ -104,7 +123,7 @@ function Pages({ practiceData, setPracticeData }) {
         })
         .catch(() => setAutoLoading(false));
     }
-  }, [path, practiceData, autoLoading, setPracticeData]);
+  }, [path, practiceData, autoLoading, setPracticeData, user]);
 
   return (
     <div className="flex-1 flex flex-col">
@@ -112,7 +131,10 @@ function Pages({ practiceData, setPracticeData }) {
         <Route
           path="/"
           element={
-            <TypingTest onViewDashboard={() => navigate('/dashboard')} />
+            <TypingTest
+              onViewDashboard={() => navigate('/dashboard')}
+              onSessionSaved={onSessionSaved}
+            />
           }
         />
         <Route
@@ -126,6 +148,7 @@ function Pages({ practiceData, setPracticeData }) {
                 targetedBigrams={practiceData.targeted_bigrams}
                 onViewDashboard={() => navigate('/dashboard')}
                 onBackToDashboard={() => navigate('/dashboard')}
+                onSessionSaved={onSessionSaved}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center">
@@ -139,13 +162,15 @@ function Pages({ practiceData, setPracticeData }) {
         <Route
           path="/dashboard"
           element={
-            <Dashboard
-              onBackToTest={() => navigate('/')}
-              onStartPractice={(data) => {
-                setPracticeData(data);
-                navigate('/practice');
-              }}
-            />
+            <ProtectedRoute>
+              <Dashboard
+                onBackToTest={() => navigate('/')}
+                onStartPractice={(data) => {
+                  setPracticeData(data);
+                  navigate('/practice');
+                }}
+              />
+            </ProtectedRoute>
           }
         />
       </Routes>
@@ -153,27 +178,27 @@ function Pages({ practiceData, setPracticeData }) {
   );
 }
 
-/** Layout wrapper: header + pages, shown when authenticated. */
+/** Layout wrapper: header + pages. Public — guests land straight on the test. */
 function AppLayout() {
+  const { user, loading } = useAuth();
   const [practiceData, setPracticeData] = useState(null);
   const [practiceAvailable, setPracticeAvailable] = useState(false);
   const [appReady, setAppReady] = useState(false);
-  const location = useLocation();
 
-  // Fetch practice data at the layout level so it's ready before routes render
-  useEffect(() => {
-    if (appReady) return;
-    apiFetch('/api/practice/generate?count=10&word_count=35')
+  // Both practice values are derived from the signed-in user's own stats, so
+  // guests skip them rather than firing requests that would 401.
+  const refreshPracticeData = useCallback(() => {
+    if (!user) return Promise.resolve();
+    return apiFetch('/api/practice/generate?count=10&word_count=35')
       .then((res) => res.json())
       .then((json) => {
         if (!json.error) setPracticeData(json);
       })
-      .catch(() => {})
-      .finally(() => setAppReady(true));
-  }, []);
+      .catch(() => {});
+  }, [user]);
 
-  // Re-check practice availability on every route change
-  useEffect(() => {
+  const refreshPracticeAvailability = useCallback(() => {
+    if (!user) return;
     apiFetch('/api/stats/bigrams')
       .then((res) => res.json())
       .then((json) => {
@@ -183,7 +208,34 @@ function AppLayout() {
         setPracticeAvailable(weak.length >= 1);
       })
       .catch(() => setPracticeAvailable(false));
-  }, [location.pathname]);
+  }, [user]);
+
+  // A saved test changes the user's bigram stats, so regenerate the practice
+  // words against the new weaknesses *and* re-check the unlock condition.
+  // (`getBigramStats` is cached server-side but invalidated on session save,
+  // and Node handles these sequentially, so only one recompute happens.)
+  const handleSessionSaved = useCallback(() => {
+    refreshPracticeData();
+    refreshPracticeAvailability();
+  }, [refreshPracticeData, refreshPracticeAvailability]);
+
+  // Initial load: gate the first render on the practice words, then check the
+  // unlock condition.
+  useEffect(() => {
+    if (loading) return;
+
+    if (!user) {
+      setPracticeData(null);
+      setPracticeAvailable(false);
+      setAppReady(true);
+      return;
+    }
+
+    refreshPracticeData().finally(() => {
+      setAppReady(true);
+      refreshPracticeAvailability();
+    });
+  }, [loading, user, refreshPracticeData, refreshPracticeAvailability]);
 
   if (!appReady) {
     return (
@@ -200,7 +252,11 @@ function AppLayout() {
         setPracticeData={setPracticeData}
         practiceAvailable={practiceAvailable}
       />
-      <Pages practiceData={practiceData} setPracticeData={setPracticeData} />
+      <Pages
+        practiceData={practiceData}
+        setPracticeData={setPracticeData}
+        onSessionSaved={handleSessionSaved}
+      />
     </div>
   );
 }
@@ -210,14 +266,11 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          <Route
-            path="/*"
-            element={
-              <ProtectedRoute>
-                <AppLayout />
-              </ProtectedRoute>
-            }
-          />
+          {/* Sign-in is a full-screen takeover, so it lives outside the shell.
+              The shell itself is public — guests can take tests without an
+              account; /dashboard is the only route that requires sign-in. */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/*" element={<AppLayout />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

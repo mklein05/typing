@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "backup": "node backup.js",
+    "restore": "node restore.js"
   },
   "keywords": [],
   "author": "",

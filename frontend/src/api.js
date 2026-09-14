@@ -23,8 +23,10 @@ export async function apiFetch(endpoint, options = {}) {
     headers,
   });
 
-  // If the JWT is invalid or expired, sign the user out
-  if (response.status === 401) {
+  // A 401 means the token was rejected. Only sign out if there actually was a
+  // session — a guest sends no token at all, so there is nothing to sign out
+  // of, and doing it would hide the real cause of the failure.
+  if (response.status === 401 && session) {
     await supabase.auth.signOut();
     throw new Error('Session expired — please sign in again.');
   }

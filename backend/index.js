@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 import morgan from 'morgan';
 
@@ -10,15 +11,25 @@ import {
   getAllSessions,
   getKeyStats,
   getBigramStats,
-  getQuotes
+  getQuotes,
+  invalidateBigramCache
 } from './database.js';
 import { requireAuth } from './auth.js';
 import { generatePractice } from './practice.js';
+import { runBackup, startBackupSchedule } from './backup.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 8000;
+
+// Constant-time compare, so the backup secret cannot be guessed by timing.
+function safeEqual(a, b) {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
 
 // Setup database tables on startup
 initDb();
@@ -52,6 +63,9 @@ app.post('/api/sessions', requireAuth, (req, res) => {
     }
 
     const sessionId = createSession(req.body, userId);
+    // A new session changes this user's bigram stats — drop the cached copy so
+    // the next read recomputes instead of serving stale data.
+    invalidateBigramCache(userId);
     res.status(201).json({ session_id: sessionId, message: 'Session saved successfully' });
   } catch (err) {
     console.error('[sessions] Save failed:', err);
@@ -113,7 +127,10 @@ app.post('/api/users/username', requireAuth, (req, res) => {
   res.json({ username, message: 'Username set' });
 });
 
-app.get('/api/quotes', requireAuth, (req, res) => {
+// Public: seal facts are static seed content with no user data attached, so
+// guests can use Quotes mode without an account. Every other route stays
+// behind requireAuth.
+app.get('/api/quotes', (req, res) => {
   const count = parseInt(req.query.count, 10) || 10;
   const category = req.query.category || 'seal';
   const difficulty = req.query.difficulty ? parseInt(req.query.difficulty, 10) : null;
@@ -121,6 +138,29 @@ app.get('/api/quotes', requireAuth, (req, res) => {
   res.json(getQuotes(count, category, difficulty));
 });
 
+// Off-site backup trigger, for an external scheduler (Railway cron, GitHub
+// Actions, cron-job.org). Uses a shared secret rather than a Supabase token so a
+// scheduler never has to hold user credentials. Fails closed if unset.
+app.post('/api/admin/backup', (req, res) => {
+  const secret = process.env.BACKUP_SECRET;
+  const provided = req.get('x-backup-secret') || '';
+
+  if (!secret || !safeEqual(provided, secret)) {
+    return res.status(401).json({ detail: 'Unauthorized' });
+  }
+
+  runBackup({ reason: 'http' })
+    .then((result) => res.json(result))
+    .catch((err) => {
+      console.error('[backup] trigger failed:', err);
+      res.status(500).json({ detail: err.message });
+    });
+});
+
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
 });
+
+// Starts the daily snapshot. Logs and returns when SUPABASE_SERVICE_ROLE_KEY is
+// absent, so it is safe to leave in every environment.
+startBackupSchedule();

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../api';
+import { useAuth } from '../context/AuthContext';
 
 // ─── WORD LIST (200+ common English words) ────────────────────────────
 const WORD_BANK = [
@@ -67,6 +69,7 @@ export default function TypingTest({
   drillText = '',
   targetedBigrams = [],
   onBackToDashboard,
+  onSessionSaved,
 }) {
   // ─── Refs (don't trigger re-renders on every keystroke) ──────────
   const keystrokesRef = useRef([]);
@@ -76,6 +79,7 @@ export default function TypingTest({
   const typedWordsRef = useRef([]);     // stores what user typed per completed word index
   const prevWpmRef = useRef(0);        // tracks previous WPM for pulse detection
   const wordsContainerRef = useRef(null); // ref for measuring word rows
+  const restartButtonRef = useRef(null);  // so Tab can jump straight to restart
   const [sealFrame, setSealFrame] = useState(0);
 
   // ─── Scrolling viewport (3 rows max) ──────────────────────────────
@@ -84,6 +88,8 @@ export default function TypingTest({
 
   // ─── State ────────────────────────────────────────────────────────
   const isPractice = mode === 'practice';
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [textMode, setTextMode] = useState('words'); // 'words' | 'quotes'
   const [quoteIndex, setQuoteIndex] = useState(0);    // which quote set we're on
   const [quoteTotal, setQuoteTotal] = useState(0);    // total quotes available
@@ -310,6 +316,13 @@ export default function TypingTest({
     setCachedStats({ wpm, accuracy, wordAccuracy, correctWords, totalWords, durationSec, totalKeystrokes: totalNonBackspace });
 
     // ─── POST to backend ──────────────────────────────────────────
+    // Guests have no account to attach a session to, so their results are
+    // displayed but never persisted.
+    if (!user) {
+      setPostStatus('guest');
+      return;
+    }
+
     setPostStatus('posting');
     const payload = {
       started_at: new Date(startTimeRef.current).toISOString(),
@@ -331,11 +344,14 @@ export default function TypingTest({
       .then(res => {
         if (!res.ok) throw new Error('Server error');
         setPostStatus('done');
+        // A saved session changes bigram stats — let the layout re-check
+        // whether practice should now be unlocked.
+        onSessionSaved?.();
       })
       .catch(() => {
         setPostStatus('error');
       });
-  }, [words]);
+  }, [words, user, onSessionSaved]);
 
   // ─── Advance to next word ─────────────────────────────────────────
   // Called when user presses Space on a non-empty input
@@ -392,17 +408,31 @@ export default function TypingTest({
 
   // ─── KEYDOWN handler — processes character immediately ──────────
   const handleKeyDown = useCallback((e) => {
-    // Start timer on first keydown
+    if (testState === 'finished') return;
+
+    // Tab jumps straight to the restart button (MonkeyType style). Handled
+    // explicitly rather than by DOM order, because the button sits beside the
+    // mode toggles — which would otherwise be the first thing Tab reached.
+    if (e.key === 'Tab' && !e.shiftKey && restartButtonRef.current) {
+      e.preventDefault();
+      restartButtonRef.current.focus();
+      return;
+    }
+
+    // Modifier / navigation keys must never start the test. Starting it on
+    // these would hide the word-count selector and kick off the timer.
+    if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab', 'Escape'].includes(e.key)) {
+      return;
+    }
+
+    // Anything that isn't a single character or Backspace (arrows, F-keys,
+    // Dead keys) is ignored before the timer starts too.
+    if (e.key !== 'Backspace' && e.key.length !== 1) return;
+
+    // First real keystroke starts the timer
     if (testState === 'idle') {
       startTimeRef.current = Date.now();
       setTestState('running');
-    }
-
-    if (testState === 'finished') return;
-
-    // Ignore modifier-only keypresses
-    if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab', 'Escape'].includes(e.key)) {
-      return;
     }
 
     setSealFrame(prev => (prev === 0 ? 1 : 0));
@@ -604,6 +634,9 @@ export default function TypingTest({
     setCachedStats(null);
     setPostStatus('idle');
     setSealFrame(0);
+    // Hand focus back to the test so typing resumes immediately — if restart
+    // was triggered from the keyboard, the button still holds focus.
+    inputRef.current?.focus();
   }, [isPractice, practiceWords, wordCount, textMode, fetchQuotes]);
 
   // ─── Switch between words / quotes text mode ─────────────────────
@@ -839,6 +872,34 @@ export default function TypingTest({
   };
 
 
+  // --- Render the restart button ---
+  // Absolutely positioned just past the toggle row so the toggles themselves
+  // keep their centred position on screen.
+  const renderRestart = () => (
+    <button
+      ref={restartButtonRef}
+      type="button"
+      onClick={restartTest}
+      title="Restart test (Tab, then Enter)"
+      aria-label="Restart test"
+      className="absolute left-full top-1/2 -translate-y-1/2 ml-4 w-8 h-8 flex items-center justify-center border border-slate-700 theme-text-muted theme-text-hover transition-colors hover:border-amber-500/60 focus:outline-none focus:border-amber-500 focus:text-amber-400"
+    >
+      <svg
+        className="w-4 h-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <polyline points="1 4 1 10 7 10" />
+        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+      </svg>
+    </button>
+  );
+
   // --- Render seal + live WPM side by side ---
   const renderLiveWpm = () => (
     <div className="flex items-center justify-center gap-6 mb-3">
@@ -923,6 +984,14 @@ export default function TypingTest({
         {postStatus === 'done' && (
           <div className="text-green-500 text-sm">✓ Results saved</div>
         )}
+        {postStatus === 'guest' && (
+          <button
+            onClick={() => navigate('/login')}
+            className="theme-text-muted hover:theme-text text-sm transition-colors"
+          >
+            Sign in to save your results →
+          </button>
+        )}
 
         {/* Practice-specific messaging */}
         {isPractice && (
@@ -998,7 +1067,7 @@ export default function TypingTest({
           {!isPractice && (
             <div className="flex flex-col items-center gap-3 mt-6">
               {/* Text mode toggle (matches practice Words/Drills styling) */}
-              <div className="flex gap-2">
+              <div className="relative flex gap-2">
                 <button
                   onClick={() => handleTextModeChange('words')}
                   className={`font-pixel px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${
@@ -1019,6 +1088,7 @@ export default function TypingTest({
                 >
                   Quotes
                 </button>
+                {renderRestart()}
               </div>
 
               {/* Word / quote count — idle only */}
@@ -1052,7 +1122,7 @@ export default function TypingTest({
 
           {/* Drill mode toggle — below the words area, practice only */}
           {isPractice && drillText && (
-            <div className="flex gap-2 mt-6">
+            <div className="relative flex gap-2 mt-6">
               <button
                 onClick={() => drillMode && toggleDrillMode()}
                 className={`font-pixel px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${
@@ -1073,6 +1143,7 @@ export default function TypingTest({
               >
                 Drills
               </button>
+              {renderRestart()}
             </div>
           )}
         </>

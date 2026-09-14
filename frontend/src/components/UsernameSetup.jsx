@@ -43,7 +43,7 @@ export default function UsernameSetup({ onDone }) {
   }
 
   return (
-    <div className="min-h-screen theme-app flex flex-col items-center justify-center px-4">
+    <div className="flex-1 flex flex-col items-center justify-center px-4 py-10">
       <div className="w-16 h-16 theme-accent rounded-2xl flex items-center justify-center font-bold text-2xl mb-6">
         T
       </div>

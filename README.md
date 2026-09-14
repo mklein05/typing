@@ -52,6 +52,11 @@ Both files are gitignored — never commit real secrets.
 | `SUPABASE_ANON_KEY` | |
 | `ALLOWED_ORIGINS` | Comma-separated. Must include the deployed frontend URL |
 | `DB_PATH` | Optional. Where the SQLite file lives — see below |
+| `SUPABASE_SERVICE_ROLE_KEY` | Optional. Enables off-site backups — see below |
+| `BACKUP_BUCKET` | Optional. Defaults to `db-backups` |
+| `BACKUP_RETENTION_DAYS` | Optional. Defaults to `14` |
+| `BACKUP_INTERVAL_HOURS` | Optional. Defaults to `24` |
+| `BACKUP_SECRET` | Optional. Only needed to trigger backups over HTTP |
 
 ## Data and persistence
 
@@ -65,6 +70,66 @@ discarded on every redeploy. To actually keep data:
 2. Set `DB_PATH=/data/typing_test.db`.
 
 Without that, every deploy starts from an empty database.
+
+## Backups
+
+The volume is durable across redeploys, but nothing copies it anywhere. If it is corrupted,
+detached, or deleted, every session and keystroke goes with it. `backend/backup.js` takes
+daily snapshots and ships them to **Supabase Storage**, so that loss is recoverable.
+
+### Setup
+
+1. Create a **private** Storage bucket in Supabase named `db-backups`.
+2. Set `SUPABASE_SERVICE_ROLE_KEY` on the backend service (Railway → Variables).
+
+Backups stay off until that key is set: the server logs `[backup] disabled` on boot.
+Once set, `[backup] every 24h → db-backups (retain 14d)` confirms it is running.
+
+The service role key bypasses row-level security, so it is **server-side only** and must
+never be exposed to the browser.
+
+### How snapshots are taken
+
+`db.backup()` uses SQLite's **Online Backup API**, which is safe while the app is actively
+writing. Do not back up by copying the `.db` file: a write in flight can produce a torn file
+that opens without complaint and is quietly missing rows.
+
+Every snapshot is opened and checked with `PRAGMA integrity_check` before upload, and its row
+counts are logged — a snapshot that silently contains nothing is worse than no snapshot,
+because it looks like safety. Snapshots past the retention window are pruned, except the
+newest one, which is never deleted.
+
+### Triggering a backup
+
+| Method | How |
+| --- | --- |
+| Schedule | Automatic, every `BACKUP_INTERVAL_HOURS`. Also fires on boot if the newest snapshot is already stale, so frequent redeploys cannot skip backups indefinitely |
+| CLI | `npm run backup` inside `backend/` |
+| HTTP | `curl -X POST -H "x-backup-secret: $BACKUP_SECRET" <backend-url>/api/admin/backup` |
+
+The HTTP route lets an external scheduler (Railway cron, GitHub Actions) drive backups. It
+uses a shared secret rather than a Supabase token so a scheduler never holds user
+credentials, and it **fails closed**: with `BACKUP_SECRET` unset, every request gets a 401.
+
+### Restoring
+
+Run this **inside the deployed container, not locally** — locally it would overwrite your dev
+database instead of the volume. Use the Railway dashboard's service Shell, or
+`railway ssh --service backend`.
+
+```bash
+node restore.js --list          # snapshots, newest first
+node restore.js                 # restore the newest
+node restore.js typing_test-2026-09-14T02-00-00-000Z.db
+```
+
+The snapshot is downloaded and integrity-checked *before* the live file is touched, the
+current file is kept as `<db>.pre-restore-<timestamp>`, and the swap itself is an atomic
+`rename`. Restart the backend service afterwards so it reopens the new file — the running
+process holds its previous handle until then, so nothing is swapped out from under a live
+request.
+
+**Test a restore before you need one.** An untested restore path is not a backup.
 
 ## Deployment (Railway)
 
@@ -88,6 +153,8 @@ Backend environment variables must be set in the Railway dashboard, including
 | frontend | `npm run lint` | Oxlint |
 | backend | `npm run dev` | Express with `--watch` |
 | backend | `npm start` | Express (used by Railway) |
+| backend | `npm run backup` | Take and upload a snapshot now |
+| backend | `npm run restore` | Restore a snapshot over the live database |
 
 ## Implementation notes
 
