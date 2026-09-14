@@ -25,6 +25,19 @@ const PREFIX = 'typing_test-';
 // Supabase's default per-object limit on the free tier.
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
+/**
+ * Snapshots are filed under a folder per environment, so a snapshot taken on a
+ * laptop can never be confused with — or restored over — production. Railway
+ * sets RAILWAY_ENVIRONMENT_NAME inside containers, so a deploy labels itself
+ * with no extra configuration.
+ */
+export const backupLabel = () =>
+  (process.env.BACKUP_LABEL || process.env.RAILWAY_ENVIRONMENT_NAME || 'local')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .toLowerCase() || 'local';
+
+const folder = () => backupLabel();
+
 // Read through functions rather than at module scope: index.js imports this
 // module before dotenv has run, so top-level reads would see undefined.
 const bucket = () => process.env.BACKUP_BUCKET || 'db-backups';
@@ -53,12 +66,14 @@ export function backupsEnabled() {
   return process.env.DB_PATH !== ':memory:' && getAdmin() !== null;
 }
 
-/** Snapshots in the bucket, newest first. */
+/** Snapshots for this environment, newest first. */
 export async function listBackups() {
   const supabase = getAdmin();
   if (!supabase) throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set');
 
-  const { data, error } = await supabase.storage.from(bucket()).list('', { limit: 1000 });
+  const { data, error } = await supabase.storage
+    .from(bucket())
+    .list(folder(), { limit: 1000 });
   if (error) throw new Error(`list failed: ${error.message}`);
 
   return (data || [])
@@ -72,7 +87,7 @@ export async function downloadBackup(name) {
   const supabase = getAdmin();
   if (!supabase) throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set');
 
-  const { data, error } = await supabase.storage.from(bucket()).download(name);
+  const { data, error } = await supabase.storage.from(bucket()).download(`${folder()}/${name}`);
   if (error) throw new Error(`download failed: ${error.message}`);
 
   return Buffer.from(await data.arrayBuffer());
@@ -133,7 +148,7 @@ async function takeSnapshot(reason) {
     const supabase = getAdmin();
     const { error } = await supabase.storage
       .from(bucket())
-      .upload(name, fs.readFileSync(tmp), {
+      .upload(`${folder()}/${name}`, fs.readFileSync(tmp), {
         contentType: 'application/octet-stream',
         upsert: false,
       });
@@ -154,7 +169,9 @@ async function takeSnapshot(reason) {
 }
 
 async function prune(supabase) {
-  const { data, error } = await supabase.storage.from(bucket()).list('', { limit: 1000 });
+  // Only ever prune this environment's folder, so production can never delete a
+  // laptop's snapshots, or the other way round.
+  const { data, error } = await supabase.storage.from(bucket()).list(folder(), { limit: 1000 });
   if (error || !data) return 0;
 
   const snapshots = data
@@ -175,7 +192,9 @@ async function prune(supabase) {
 
   if (stale.length === 0) return 0;
 
-  const { error: removeError } = await supabase.storage.from(bucket()).remove(stale);
+  const { error: removeError } = await supabase.storage
+    .from(bucket())
+    .remove(stale.map((n) => `${folder()}/${n}`));
   if (removeError) {
     console.error('[backup] prune failed:', removeError.message);
     return 0;

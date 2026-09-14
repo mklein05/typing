@@ -99,6 +99,11 @@ counts are logged — a snapshot that silently contains nothing is worse than no
 because it looks like safety. Snapshots past the retention window are pruned, except the
 newest one, which is never deleted.
 
+Objects are filed under a folder per environment — `production/` in a deploy, `local/` on a
+laptop — so a snapshot from one can never be mistaken for, or restored over, the other. The
+folder name comes from `RAILWAY_ENVIRONMENT_NAME`, which Railway sets automatically; override
+it with `BACKUP_LABEL`.
+
 ### Triggering a backup
 
 | Method | How |

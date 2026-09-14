@@ -1,5 +1,9 @@
 // Restore a snapshot from Supabase Storage over the live database file.
 //
+// Snapshots are filed per environment, so this only ever sees the folder for the
+// environment it runs in: a laptop reads `local/`, a deployed container reads
+// `production/`. A snapshot from one therefore cannot be restored over the other.
+//
 // Run this INSIDE the deployed container, not on your laptop — locally it would
 // overwrite your dev database instead of the Railway volume:
 //
@@ -17,7 +21,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { DB_PATH } from './database.js';
-import { listBackups, downloadBackup } from './backup.js';
+import { listBackups, downloadBackup, backupLabel } from './backup.js';
 
 const wanted = process.argv[2];
 
@@ -25,12 +29,12 @@ async function main() {
   const snapshots = await listBackups();
 
   if (snapshots.length === 0) {
-    console.error('No snapshots in the bucket. Nothing to restore.');
+    console.error(`No snapshots for environment "${backupLabel()}". Nothing to restore.`);
     process.exit(1);
   }
 
   if (wanted === '--list') {
-    console.log(`Snapshots available for ${DB_PATH}:`);
+    console.log(`Snapshots for ${DB_PATH} (environment "${backupLabel()}"):`);
     for (const s of snapshots) {
       const kb = ((s.metadata?.size ?? 0) / 1024).toFixed(0);
       console.log(`  ${s.name}  ${kb} KB  ${s.created_at}`);
