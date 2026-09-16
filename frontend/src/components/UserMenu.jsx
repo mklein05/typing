@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
  * User profile button — also acts as the entry point to the Dashboard.
  * Highlighted while on /dashboard. Dropdown holds Dashboard + sign-out.
  */
-export default function UserMenu() {
+export default function UserMenu({ entitlements }) {
   const { user, username, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
@@ -16,6 +16,8 @@ export default function UserMenu() {
 
   const displayName = username || user.user_metadata?.full_name || user.user_metadata?.name || user.email;
   const onDashboard = location.pathname === '/dashboard';
+  const quota = entitlements?.usage?.llm_practice;
+  const isPremium = entitlements?.premium === true;
 
   return (
     <div className="relative">
@@ -68,6 +70,28 @@ export default function UserMenu() {
             <div className="px-3 py-2 text-sm text-slate-300 border-b border-slate-700 truncate">
               {user.email}
             </div>
+            {/* Hidden until loaded, so a premium user never sees "Free plan" flash. */}
+            {entitlements && (
+              <div
+                className="px-3 py-2 border-b border-slate-700"
+                title={
+                  quota?.resets_at
+                    ? `Resets ${new Date(quota.resets_at).toUTCString()}`
+                    : undefined
+                }
+              >
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className={isPremium ? 'text-amber-400 font-bold' : 'text-slate-500'}>
+                    {isPremium ? 'Premium' : 'Free plan'}
+                  </span>
+                  {quota && !isPremium && (
+                    <span className="text-slate-500">
+                      {quota.remaining}/{quota.limit} today
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
             <button
               onClick={() => {
                 setOpen(false);

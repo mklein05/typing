@@ -16,6 +16,7 @@ import {
 } from './database.js';
 import { requireAuth } from './auth.js';
 import { generatePractice } from './practice.js';
+import { getEntitlements } from './entitlements.js';
 import { runBackup, startBackupSchedule } from './backup.js';
 
 dotenv.config();
@@ -125,6 +126,14 @@ app.post('/api/users/username', requireAuth, (req, res) => {
   `).run(req.userId, username);
 
   res.json({ username, message: 'Username set' });
+});
+
+// Read-only entitlement + quota status, so the UI can show the plan and the
+// remaining daily allowance. requireQuota() in entitlements.js is the gate the
+// LLM generation route will attach when it lands; nothing is gated yet, so no
+// existing behaviour changes.
+app.get('/api/entitlements', requireAuth, (req, res) => {
+  res.json(getEntitlements(req.userId));
 });
 
 // Public: seal facts are static seed content with no user data attached, so

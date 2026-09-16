@@ -76,9 +76,46 @@ export function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_quotes_category ON quotes(category);
     CREATE INDEX IF NOT EXISTS idx_quotes_difficulty ON quotes(difficulty);
+
+    -- Metered usage, one row per user per feature per period. The composite
+    -- primary key is what makes "consume one unit" a single upsert.
+    CREATE TABLE IF NOT EXISTS usage_counters (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      feature TEXT NOT NULL,
+      period_start TEXT NOT NULL,
+      used INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, feature, period_start)
+    );
   `);
 
+  // Additive migrations for databases created before these columns existed.
+  // SQLite has no ADD COLUMN IF NOT EXISTS, so these check first and are safe
+  // to run on every boot.
+  addColumnIfMissing('users', 'plan', "TEXT NOT NULL DEFAULT 'free'");
+  addColumnIfMissing('users', 'premium_until', 'TEXT');
+
   seedQuotes();
+}
+
+/**
+ * SQLite has no ADD COLUMN IF NOT EXISTS, so inspect the table first. Safe to
+ * run on every boot, including against a database that already has the column.
+ */
+function addColumnIfMissing(table, column, definition) {
+  const existing = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (existing.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+/**
+ * Create the users row if it does not exist. Rows are created lazily on first
+ * write, so anything that touches a brand-new account needs this first — the
+ * usage counters have a foreign key to users.
+ */
+export function ensureUser(userId, email = null) {
+  db.prepare(
+    'INSERT INTO users (id, email) VALUES (?, ?) ON CONFLICT(id) DO NOTHING'
+  ).run(userId, email);
 }
 
 export function createSession(data, userId = null) {

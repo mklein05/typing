@@ -9,7 +9,7 @@ import LoginPage from './components/LoginPage';
 import { apiFetch } from './api';
 
 /** Header with logo, tab navigation, and user menu. */
-function Header({ practiceData, setPracticeData, practiceAvailable }) {
+function Header({ practiceData, setPracticeData, practiceAvailable, entitlements }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -88,7 +88,7 @@ function Header({ practiceData, setPracticeData, practiceAvailable }) {
       </nav>
 
       {user ? (
-        <UserMenu />
+        <UserMenu entitlements={entitlements} />
       ) : (
         <button
           onClick={() => navigate('/login')}
@@ -183,6 +183,7 @@ function AppLayout() {
   const { user, loading } = useAuth();
   const [practiceData, setPracticeData] = useState(null);
   const [practiceAvailable, setPracticeAvailable] = useState(false);
+  const [entitlements, setEntitlements] = useState(null);
   const [appReady, setAppReady] = useState(false);
 
   // Both practice values are derived from the signed-in user's own stats, so
@@ -210,6 +211,21 @@ function AppLayout() {
       .catch(() => setPracticeAvailable(false));
   }, [user]);
 
+  // Plan and remaining allowance. Read from the server rather than cached in
+  // local state the client can edit.
+  const refreshEntitlements = useCallback(() => {
+    if (!user) {
+      setEntitlements(null);
+      return Promise.resolve();
+    }
+    return apiFetch('/api/entitlements')
+      .then((res) => res.json())
+      .then((json) => {
+        if (!json.error) setEntitlements(json);
+      })
+      .catch(() => {});
+  }, [user]);
+
   // A saved test changes the user's bigram stats, so regenerate the practice
   // words against the new weaknesses *and* re-check the unlock condition.
   // (`getBigramStats` is cached server-side but invalidated on session save,
@@ -227,6 +243,7 @@ function AppLayout() {
     if (!user) {
       setPracticeData(null);
       setPracticeAvailable(false);
+      setEntitlements(null);
       setAppReady(true);
       return;
     }
@@ -234,8 +251,9 @@ function AppLayout() {
     refreshPracticeData().finally(() => {
       setAppReady(true);
       refreshPracticeAvailability();
+      refreshEntitlements();
     });
-  }, [loading, user, refreshPracticeData, refreshPracticeAvailability]);
+  }, [loading, user, refreshPracticeData, refreshPracticeAvailability, refreshEntitlements]);
 
   if (!appReady) {
     return (
@@ -251,6 +269,7 @@ function AppLayout() {
         practiceData={practiceData}
         setPracticeData={setPracticeData}
         practiceAvailable={practiceAvailable}
+        entitlements={entitlements}
       />
       <Pages
         practiceData={practiceData}

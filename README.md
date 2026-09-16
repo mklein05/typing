@@ -57,6 +57,7 @@ Both files are gitignored — never commit real secrets.
 | `BACKUP_RETENTION_DAYS` | Optional. Defaults to `14` |
 | `BACKUP_INTERVAL_HOURS` | Optional. Defaults to `24` |
 | `BACKUP_SECRET` | Optional. Only needed to trigger backups over HTTP |
+| `FREE_LLM_DAILY_LIMIT` | Optional. Free-tier daily allowance for metered features. Defaults to `3` |
 
 ## Data and persistence
 
@@ -135,6 +136,32 @@ process holds its previous handle until then, so nothing is swapped out from und
 request.
 
 **Test a restore before you need one.** An untested restore path is not a backup.
+
+## Premium entitlements
+
+`backend/entitlements.js` owns plans and metered usage. It is deliberately
+provider-agnostic: whatever sells the subscription (Paddle, Lemon Squeezy, Stripe) only
+has to call `setPremium()` from a webhook. Nothing there knows which one it is.
+
+| Piece | Where |
+| --- | --- |
+| `users.plan`, `users.premium_until` | Added by a guarded migration in `initDb()` |
+| `usage_counters` | One row per user, per feature, per UTC day |
+| `getEntitlements(userId)` | Plan + remaining allowance, served at `GET /api/entitlements` |
+| `consumeQuota(userId, feature)` | Checks the allowance and consumes one unit |
+| `requireQuota(feature)` | Express middleware, ready to attach to a metered route |
+| `setPremium(userId, { premium, until })` | The **only** writer of the plan columns |
+
+Checks are server-side and always local. The client can be edited, and a webhook can fail
+to arrive, so `premium_until` is enforced in the read path — a missed cancellation webhook
+cannot leave someone premium forever.
+
+**Nothing is gated yet.** `requireQuota` exists but is attached to no route, so no existing
+behaviour changes. The LLM generation route attaches it when it lands.
+
+The daily counter uses UTC, so allowances roll over at midnight UTC rather than the user's
+local midnight. Premium usage is counted too — it is the only way to see what the feature
+actually costs.
 
 ## Deployment (Railway)
 
