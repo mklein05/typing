@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
 import TypingTest from './components/TypingTest';
 import Dashboard from './components/Dashboard';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import UserMenu from './components/UserMenu';
 import LoginPage from './components/LoginPage';
+import PrivacyPolicy from './components/PrivacyPolicy';
 import { apiFetch } from './api';
 
 /** Header with logo, tab navigation, and user menu. */
@@ -173,6 +174,7 @@ function Pages({ practiceData, setPracticeData, onSessionSaved }) {
             </ProtectedRoute>
           }
         />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
       </Routes>
     </div>
   );
@@ -276,6 +278,15 @@ function AppLayout() {
         setPracticeData={setPracticeData}
         onSessionSaved={handleSessionSaved}
       />
+      {/* Google requires the privacy policy to be linked from the homepage. */}
+      <footer className="shrink-0 border-t border-slate-800 px-6 py-2.5 flex items-center justify-between text-xs">
+        <span className="theme-text-subtle">typingSeal</span>
+        <nav className="flex gap-4">
+          <Link to="/privacy" className="theme-text-subtle hover:text-amber-400 transition-colors">
+            Privacy
+          </Link>
+        </nav>
+      </footer>
     </div>
   );
 }

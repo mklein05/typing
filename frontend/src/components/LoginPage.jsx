@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 /**
@@ -58,6 +58,15 @@ export default function LoginPage() {
       >
         Continue as guest →
       </button>
+
+      {/* Sending someone to Google's consent screen from here makes a visible
+          privacy link especially important. */}
+      <Link
+        to="/privacy"
+        className="mt-8 text-xs theme-text-subtle hover:text-amber-400 transition-colors"
+      >
+        Privacy policy
+      </Link>
     </div>
   );
 }

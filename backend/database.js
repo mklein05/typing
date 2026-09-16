@@ -86,6 +86,22 @@ export function initDb() {
       used INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (user_id, feature, period_start)
     );
+
+    -- Generated practice passages, keyed by a hash of the target bigrams rather
+    -- than by user. The text only depends on the bigram set, so this is shared
+    -- across users and never goes stale. Token and cost columns exist so the
+    -- real price of the feature can be measured rather than estimated.
+    CREATE TABLE IF NOT EXISTS llm_passages (
+      profile_key TEXT PRIMARY KEY,
+      text TEXT NOT NULL,
+      bigrams TEXT NOT NULL,
+      model TEXT NOT NULL,
+      word_count INTEGER NOT NULL,
+      prompt_tokens INTEGER,
+      completion_tokens INTEGER,
+      cost REAL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Additive migrations for databases created before these columns existed.

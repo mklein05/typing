@@ -58,6 +58,9 @@ Both files are gitignored — never commit real secrets.
 | `BACKUP_INTERVAL_HOURS` | Optional. Defaults to `24` |
 | `BACKUP_SECRET` | Optional. Only needed to trigger backups over HTTP |
 | `FREE_LLM_DAILY_LIMIT` | Optional. Free-tier daily allowance for metered features. Defaults to `3` |
+| `OPENROUTER_API_KEY` | Optional. Enables LLM-generated practice |
+| `LLM_MODEL` | Required for LLM practice. An OpenRouter slug, e.g. `vendor/model` |
+| `LLM_TIMEOUT_MS` | Optional. Defaults to `8000` |
 
 ## Data and persistence
 
@@ -162,6 +165,89 @@ behaviour changes. The LLM generation route attaches it when it lands.
 The daily counter uses UTC, so allowances roll over at midnight UTC rather than the user's
 local midnight. Premium usage is counted too — it is the only way to see what the feature
 actually costs.
+
+## LLM-generated practice
+
+`backend/llmPractice.js` generates a short passage of natural text engineered to be dense in
+the user's weakest bigrams. It is returned as `practice_words` — exactly the shape the
+practice pipeline already consumes, so **no frontend render changes are needed**.
+
+### Setup
+
+Set `OPENROUTER_API_KEY` and `LLM_MODEL` on the backend service. `LLM_MODEL` deliberately has
+**no default**: slugs are priced per model and change often, so the code refuses to guess one.
+Pick from openrouter.ai/models. While either is unset the route reports the feature as
+unavailable rather than failing.
+
+### Choosing a model
+
+**Do not use a reasoning model.** They bill their "thinking" as completion tokens, and on a
+short constrained-writing task that dwarfs the passage itself.
+
+Measured seal-themed on the hard bigram set `gh/ck/ng/pl`, 5 samples each, 2 attempts allowed:
+
+| Model | $/1k | Pass | Bigram hits | Fabricated words | Latency |
+| --- | --- | --- | --- | --- | --- |
+| `meta-llama/llama-3.1-8b-instruct` | $0.0108 | 5/5 | 12.8 | **0.6** | 3453ms |
+| **`google/gemini-3.1-flash-lite`** | $0.12 | 5/5 | **17.0** | **0.0** | **1346ms** |
+| `~anthropic/claude-haiku-latest` | $0.42 | 5/5 | 18.2 | 0.0 | 1801ms |
+| `deepseek/deepseek-v4.1-flash` | — | failed | — | — | 5912ms |
+
+The cheapest model is disqualified: `llama-3.1-8b` invents words under constraint — `ngers`
+("fingers" with `fi` removed), `plodged`, `ghilliedressed`, `cling-ing`. A user typing those
+learns nothing. Gemini is fastest, denser, and never fabricated in testing.
+
+At ~$0.0001 a passage, 90,000 passages/month — 1,000 daily free users at 3/day with *zero*
+cache reuse — is roughly **$9/month**. With profile sharing it is a fraction of that. Cost is
+not the constraint here; quality is.
+
+Truncated output is rejected rather than validated: a passage cut off mid-sentence can still
+pass the length and bigram checks, and would then be cached for everyone sharing that profile.
+
+Note that catalogue presence is not availability — `openai/gpt-5.2-chat` is listed but returns
+404 "no endpoints found". Verify any slug with a live call before committing to it.
+
+### Why it is affordable
+
+The passage is a pure function of the target bigrams, so it is cached under a hash of:
+
+```
+prompt version | model | requested word count | sorted target bigrams
+```
+
+Repeat requests become a database read, and **users who share a weakness profile share a
+passage**. Bumping `PROMPT_VERSION` invalidates everything; so does changing the model,
+deliberately.
+
+Token counts and cost are stored per generation. OpenRouter returns `usage.cost`
+automatically — no request parameter is needed, and the old `usage: { include: true }`
+parameter is deprecated and does nothing. The real cost of the feature is therefore measured
+rather than estimated.
+
+### Validation
+
+Invalid output is **never cached**: one bad passage would otherwise be served to everyone
+sharing that profile. Before caching, `validatePassage` requires:
+
+| Check | Threshold | Catches |
+| --- | --- | --- |
+| Printable ASCII only | — | curly quotes and em dashes, which are untypeable |
+| Word count | 70–140% of the request | truncated or padded output |
+| Target bigram coverage | ≥ 60% present | text that ignores the targets |
+| Bigram density | ≥ 0.25 per word | text that mentions them once |
+| Unique words | ≥ 50% | repeat-to-fill |
+| Every word has a vowel | — | bare bigrams padded in as words (`"every ng night"`) |
+| Function-word ratio | ≥ 20% | word salad that scores well on density by ceasing to be language |
+
+A rejection gets one stricter retry, then the request falls back to the deterministic
+generator. `getLlmPractice` never throws.
+
+### Quota
+
+Charged **on success only**. The route peeks with `peekQuota()` and consumes with
+`consumeQuota()` only after a validated passage comes back, so a provider outage does not cost
+the user one of their daily allowances. This is why the route does not use `requireQuota()`,
+which consumes before the handler runs.
 
 ## Deployment (Railway)
 

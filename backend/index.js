@@ -16,7 +16,8 @@ import {
 } from './database.js';
 import { requireAuth } from './auth.js';
 import { generatePractice } from './practice.js';
-import { getEntitlements } from './entitlements.js';
+import { getEntitlements, peekQuota, consumeQuota } from './entitlements.js';
+import { getLlmPractice } from './llmPractice.js';
 import { runBackup, startBackupSchedule } from './backup.js';
 
 dotenv.config();
@@ -129,11 +130,71 @@ app.post('/api/users/username', requireAuth, (req, res) => {
 });
 
 // Read-only entitlement + quota status, so the UI can show the plan and the
-// remaining daily allowance. requireQuota() in entitlements.js is the gate the
-// LLM generation route will attach when it lands; nothing is gated yet, so no
-// existing behaviour changes.
+// remaining daily allowance.
 app.get('/api/entitlements', requireAuth, (req, res) => {
   res.json(getEntitlements(req.userId));
+});
+
+// LLM-generated practice. Deliberately separate from /api/practice/generate so
+// that quota is spent by an explicit user action and existing callers are
+// unaffected.
+//
+// Quota is peeked first and consumed only after a validated passage comes back.
+// requireQuota() would consume up front, which would cost the user an allowance
+// every time the provider was down.
+app.post('/api/practice/generate-llm', requireAuth, async (req, res) => {
+  const userId = req.userId;
+  const count = parseInt(req.query.count, 10) || 10;
+  const wordCount = Math.min(Math.max(parseInt(req.query.word_count, 10) || 35, 20), 80);
+
+  const quota = peekQuota(userId, 'llm_practice');
+  if (!quota.allowed) {
+    return res.status(429).json({
+      code: 'quota_exceeded',
+      detail: `Your free plan includes ${quota.limit} AI passages per day.`,
+      quota,
+    });
+  }
+
+  try {
+    // Reuse the deterministic generator's target selection so both engines
+    // agree on what counts as a weak bigram.
+    const base = generatePractice(count, wordCount, userId);
+
+    if (base.error) {
+      return res.status(400).json(base);
+    }
+
+    const generated = await getLlmPractice({
+      targeted: base.targeted_bigrams || [],
+      wordCount,
+    });
+
+    if (!generated.text) {
+      // Do not consume quota for a passage the user never received.
+      return res.json({
+        ...base,
+        engine: 'fallback',
+        reason: generated.error,
+        quota,
+      });
+    }
+
+    const consumed = consumeQuota(userId, 'llm_practice');
+
+    res.json({
+      ...base,
+      // The passage is delivered in the same shape the practice pipeline already
+      // consumes, so no rendering changes are needed on the client.
+      practice_words: generated.text.split(' ').filter(Boolean),
+      engine: 'llm',
+      cached: generated.cached,
+      quota: consumed,
+    });
+  } catch (err) {
+    console.error('[llm] generate failed:', err);
+    res.status(500).json({ detail: 'Failed to generate practice' });
+  }
 });
 
 // Public: seal facts are static seed content with no user data attached, so

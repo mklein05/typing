@@ -139,9 +139,44 @@ export function consumeQuota(userId, feature) {
 }
 
 /**
+ * Read the allowance without consuming any of it.
+ *
+ * Used to reject a request up front, before doing expensive work that the user
+ * would then be charged for even if it failed.
+ */
+export function peekQuota(userId, feature) {
+  if (!userId) {
+    return {
+      allowed: false,
+      plan: 'guest',
+      premium: false,
+      feature,
+      used: 0,
+      limit: 0,
+      remaining: 0,
+      resets_at: periodResetAt(),
+    };
+  }
+
+  ensureUser(userId);
+  const plan = planOf(userId);
+  const snapshot = quotaSnapshot(userId, feature, plan);
+
+  return {
+    allowed: snapshot.limit === null || snapshot.used < snapshot.limit,
+    ...plan,
+    ...snapshot,
+  };
+}
+
+/**
  * Express middleware gating a route behind a metered feature. Attach with
  * requireQuota('llm_practice'); the result is left on req.quota for the handler
  * to echo back.
+ *
+ * NOTE: this consumes *before* the handler runs. Do not use it for a route that
+ * can fail after the check — a provider outage would silently cost the user one
+ * of their daily allowances. Use peekQuota() and consume on success instead.
  */
 export function requireQuota(feature) {
   return (req, res, next) => {
