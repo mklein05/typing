@@ -57,3 +57,8 @@ ENV/
 *.sqlite
 *.sqlite3
 
+# restore.js scratch files: the staged download, and the copy of the previous
+# database kept before a restore. Both are full copies of user data.
+*.db.incoming
+*.db.pre-restore-*
+

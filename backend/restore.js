@@ -20,7 +20,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 
-import { DB_PATH } from './database.js';
+import { DB_PATH } from './dbpath.js';
 import { listBackups, downloadBackup, backupLabel } from './backup.js';
 
 const wanted = process.argv[2];
@@ -83,9 +83,26 @@ async function main() {
     console.log(`Previous database kept at ${path.basename(aside)}`);
   }
 
-  fs.renameSync(staging, DB_PATH); // atomic swap within the same directory
+  try {
+    fs.renameSync(staging, DB_PATH); // atomic swap within the same directory
+  } catch (err) {
+    fs.rmSync(staging, { force: true });
+    console.error(`Could not replace ${DB_PATH}: ${err.message}`);
+    if (err.code === 'EPERM' || err.code === 'EBUSY') {
+      console.error(
+        'The file is locked by another process. Stop whatever is using it — including a\n' +
+          'running dev server — and try again. The database is unchanged.'
+      );
+    }
+    process.exit(1);
+  }
+
   console.log(`Restored ${target} → ${DB_PATH}`);
-  console.log('Now restart the backend service so it reopens the file.');
+  console.log(
+    'Restart the backend service NOW so it reopens the file. The swap is atomic, but the\n' +
+      'running process keeps its old handle, so anything it writes before restarting goes\n' +
+      'to a file that no longer exists and is lost.'
+  );
 }
 
 main().catch((err) => {

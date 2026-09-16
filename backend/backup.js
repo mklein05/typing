@@ -18,8 +18,6 @@ import os from 'os';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
-import { db } from './database.js';
-
 const PREFIX = 'typing_test-';
 
 // Supabase's default per-object limit on the free tier.
@@ -118,6 +116,10 @@ async function takeSnapshot(reason) {
   const tmp = path.join(os.tmpdir(), name);
 
   try {
+    // Imported lazily, so that merely importing this module does not open a
+    // connection. restore.js imports it, and an open handle on the database
+    // would block the atomic rename that replaces that file.
+    const { db } = await import('./database.js');
     await db.backup(tmp); // atomic; safe with concurrent writers
 
     const bytes = fs.statSync(tmp).size;

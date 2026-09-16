@@ -1,30 +1,15 @@
-// Loaded here rather than only in index.js: ESM evaluates imports before the
-// importing module's body, so `dotenv.config()` in index.js runs *after* this
-// file has already read DB_PATH.
-import 'dotenv/config';
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// DB_PATH lets the database live outside the app directory. This is what makes
-// a persistent Railway volume possible: mount a volume (e.g. at /data) and set
-// DB_PATH=/data/typing_test.db. Without it the DB sits next to the code, and
-// anything inside a container is discarded on every redeploy.
-const dbPath = process.env.DB_PATH || path.join(__dirname, 'typing_test.db');
-
-// Exported so backup.js and restore.js target the same file without duplicating
-// this resolution logic.
-export const DB_PATH = dbPath;
+import { DB_PATH } from './dbpath.js';
 
 // better-sqlite3 will not create missing parent directories itself.
-if (dbPath !== ':memory:') {
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+if (DB_PATH !== ':memory:') {
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 }
 
-export const db = new Database(dbPath);
+export const db = new Database(DB_PATH);
 db.pragma('foreign_keys = ON');
 
 export function initDb() {
