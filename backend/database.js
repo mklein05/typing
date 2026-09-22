@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 
 import { DB_PATH } from './dbpath.js';
+import { SEAL_FACTS } from './sealFacts.js';
 
 // better-sqlite3 will not create missing parent directories itself.
 if (DB_PATH !== ':memory:') {
@@ -70,12 +71,14 @@ export function initDb() {
       text TEXT NOT NULL,
       source TEXT DEFAULT 'curated',
       category TEXT DEFAULT 'seal',
-      difficulty INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now'))
     );
 
     CREATE INDEX IF NOT EXISTS idx_quotes_category ON quotes(category);
-    CREATE INDEX IF NOT EXISTS idx_quotes_difficulty ON quotes(difficulty);
+
+    -- Retired: nothing ever filtered on difficulty, so the column and its index
+    -- are dropped below. Removing the column requires removing the index first.
+    DROP INDEX IF EXISTS idx_quotes_difficulty;
 
     -- Metered usage, one row per user per feature per period. The composite
     -- primary key is what makes "consume one unit" a single upsert.
@@ -110,6 +113,10 @@ export function initDb() {
   addColumnIfMissing('users', 'plan', "TEXT NOT NULL DEFAULT 'free'");
   addColumnIfMissing('users', 'premium_until', 'TEXT');
 
+  // Must come after the DROP INDEX above: SQLite refuses to drop a column that
+  // an index still references.
+  dropColumnIfPresent('quotes', 'difficulty');
+
   seedQuotes();
 }
 
@@ -121,6 +128,21 @@ function addColumnIfMissing(table, column, definition) {
   const existing = db.prepare(`PRAGMA table_info(${table})`).all();
   if (existing.some((c) => c.name === column)) return;
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+/**
+ * The inverse: drop a retired column, for databases created before it was
+ * removed from the schema. Same "inspect first" approach, since SQLite has no
+ * DROP COLUMN IF EXISTS either.
+ *
+ * Any index over the column must already be gone — SQLite rejects the ALTER with
+ * "error in index ... after drop column" otherwise.
+ */
+function dropColumnIfPresent(table, column) {
+  const existing = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!existing.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+  console.log(`[db] dropped ${table}.${column}`);
 }
 
 /**
@@ -329,43 +351,45 @@ export function getBigramStats(userId = null) {
   return value;
 }
 
-export function getQuotes(count = 10, category = 'seal', difficulty = null) {
-  let where = 'WHERE category = ?';
+export function getQuotes(count = 10, category = 'seal') {
+  const where = 'WHERE category = ?';
   const params = [category];
-  if (difficulty !== null) {
-    where += ' AND difficulty = ?';
-    params.push(difficulty);
-  }
 
   const totalRow = db.prepare(`SELECT COUNT(*) AS cnt FROM quotes ${where}`).get(...params);
   const total = totalRow ? totalRow.cnt : 0;
   if (total === 0) return { quotes: [], total_available: 0 };
 
   const rows = db.prepare(`
-    SELECT id, text, source, difficulty FROM quotes ${where}
+    SELECT id, text, source FROM quotes ${where}
     ORDER BY RANDOM() LIMIT ?
   `).all(...params, count);
 
   return { quotes: rows, total_available: total };
 }
 
+/**
+ * Insert any seal facts the table does not already have.
+ *
+ * Deliberately additive rather than "seed only when the table is empty". The
+ * first Node port shipped just the first seven facts, and an empty-table check
+ * meant no existing database ever received the rest — the new facts existed in
+ * source but were unreachable in practice. Matching on text makes this safe to
+ * run on every boot, and safe to re-run after adding more facts.
+ */
 function seedQuotes() {
-  const countRow = db.prepare('SELECT COUNT(*) AS cnt FROM quotes').get();
-  if (countRow.cnt === 0) {
-    const insert = db.prepare('INSERT INTO quotes (text, difficulty) VALUES (?, ?)');
-    const insertMany = db.transaction((quotes) => {
-      for (const q of quotes) insert.run(q.text, q.difficulty);
-    });
-    insertMany(SEAL_FACTS);
-  }
-}
+  const existing = db.prepare('SELECT 1 FROM quotes WHERE text = ?');
+  const insert = db.prepare('INSERT INTO quotes (text) VALUES (?)');
 
-export const SEAL_FACTS = [
-  { text: "Seals are pinnipeds, a group of marine mammals that also includes sea lions and walruses.", difficulty: 2 },
-  { text: "There are 33 species of seals found across the world, from the Arctic to the Antarctic.", difficulty: 2 },
-  { text: "The largest seal species is the southern elephant seal. Males can weigh up to 4,000 kilograms!", difficulty: 3 },
-  { text: "Harbour seals can hold their breath for up to 30 minutes while diving for food.", difficulty: 2 },
-  { text: "Seals have a thick layer of blubber under their skin that keeps them warm in freezing waters.", difficulty: 2 },
-  { text: "Unlike dolphins and whales, seals give birth on land or ice, not in the water.", difficulty: 2 },
-  { text: "The word 'pinniped' comes from Latin, meaning 'fin-footed' or 'wing-footed'.", difficulty: 2 }
-];
+  const insertMissing = db.transaction((facts) => {
+    let added = 0;
+    for (const fact of facts) {
+      if (existing.get(fact)) continue;
+      insert.run(fact);
+      added += 1;
+    }
+    return added;
+  });
+
+  const added = insertMissing(SEAL_FACTS);
+  if (added > 0) console.log(`[db] seeded ${added} seal facts`);
+}

@@ -1,58 +1,9 @@
 import { getBigramStats } from './database.js';
+import { WORD_BANK } from '../shared/wordBank.mjs';
 
-export const WORD_BANK = [
-  "about", "above", "across", "action", "after", "again", "against",
-  "almost", "along", "already", "always", "among", "animal", "another",
-  "answer", "appear", "around", "asked", "away", "back", "became",
-  "because", "become", "before", "behind", "being", "below", "better",
-  "between", "black", "blood", "board", "brought", "build", "built",
-  "called", "came", "carry", "cause", "center", "certain", "change",
-  "children", "church", "circle", "clear", "close", "cold", "common",
-  "complete", "contain", "could", "country", "course", "cover", "create",
-  "dark", "death", "decide", "deep", "develop", "different", "direct",
-  "distant", "does", "done", "door", "down", "drive", "during", "each",
-  "early", "earth", "east", "effect", "either", "enough", "enter",
-  "equal", "even", "ever", "every", "example", "experience", "face",
-  "fact", "fall", "family", "father", "feel", "feet", "field", "figure",
-  "final", "find", "fine", "fire", "first", "five", "floor", "follow",
-  "food", "foot", "force", "form", "found", "four", "free", "friend",
-  "from", "front", "full", "game", "gave", "girl", "give", "glass",
-  "going", "gold", "gone", "good", "great", "green", "ground", "group",
-  "grow", "half", "hand", "happen", "hard", "have", "head", "hear",
-  "heart", "heavy", "help", "here", "high", "hold", "home", "horse",
-  "hour", "house", "however", "human", "hundred", "idea", "important",
-  "include", "inside", "instead", "interest", "into", "island", "just",
-  "keep", "kind", "knew", "know", "known", "land", "language", "large",
-  "last", "later", "learn", "least", "leave", "less", "letter", "life",
-  "light", "like", "line", "list", "little", "live", "long", "look",
-  "love", "made", "make", "many", "matter", "mean", "might", "mind",
-  "money", "month", "more", "morning", "most", "mother", "mountain",
-  "move", "much", "music", "must", "name", "near", "need", "never",
-  "new", "next", "night", "north", "note", "nothing", "notice", "number",
-  "object", "ocean", "once", "only", "open", "order", "other", "our",
-  "outside", "over", "own", "page", "paper", "part", "pass", "past",
-  "pattern", "people", "perhaps", "period", "person", "picture", "piece",
-  "place", "plain", "plan", "plane", "plant", "play", "point", "pose",
-  "power", "problem", "produce", "product", "pull", "put", "question",
-  "quick", "rain", "reach", "read", "ready", "really", "record", "red",
-  "remember", "rest", "right", "river", "road", "rock", "room", "round",
-  "rule", "said", "same", "saw", "school", "second", "section", "seen",
-  "serve", "several", "shape", "ship", "short", "should", "show", "side",
-  "simple", "since", "sing", "slow", "small", "snow", "something",
-  "song", "soon", "south", "space", "special", "stand", "star", "start",
-  "state", "stay", "step", "still", "stood", "stop", "story", "street",
-  "strong", "study", "such", "surface", "system", "table", "take",
-  "talk", "teach", "tell", "than", "that", "their", "them", "then",
-  "there", "these", "they", "thing", "think", "this", "those", "though",
-  "thought", "three", "through", "time", "together", "told", "took",
-  "toward", "tree", "true", "try", "turn", "under", "understand",
-  "until", "upon", "used", "using", "very", "voice", "wait", "walk",
-  "want", "war", "watch", "water", "week", "weight", "well", "went",
-  "were", "west", "what", "wheel", "when", "where", "which", "while",
-  "white", "whole", "will", "wind", "with", "within", "without",
-  "woman", "wonder", "word", "work", "world", "would", "write", "year",
-  "young", "your"
-];
+// The bank is shared with the frontend so practice and the standard test draw
+// from one vocabulary. Re-exported to keep this module's public surface intact.
+export { WORD_BANK };
 
 function extractBigrams(word) {
   const bigrams = [];

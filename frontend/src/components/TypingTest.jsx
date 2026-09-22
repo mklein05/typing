@@ -2,64 +2,35 @@ import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../api';
 import { useAuth } from '../context/AuthContext';
-
-// ─── WORD LIST (200+ common English words) ────────────────────────────
-const WORD_BANK = [
-  "the", "be", "to", "of", "and", "a", "in", "that", "have", "it",
-  "for", "not", "on", "with", "he", "as", "you", "do", "at", "this",
-  "but", "his", "by", "from", "they", "we", "say", "her", "she", "or",
-  "an", "will", "my", "one", "all", "would", "there", "their", "what", "so",
-  "up", "out", "if", "about", "who", "get", "which", "go", "me", "when",
-  "make", "can", "like", "time", "no", "just", "him", "know", "take", "people",
-  "into", "year", "your", "good", "some", "could", "them", "see", "other", "than",
-  "then", "now", "look", "only", "come", "its", "over", "think", "also", "back",
-  "after", "use", "two", "how", "our", "work", "first", "well", "way", "even",
-  "new", "want", "because", "any", "these", "give", "day", "most", "us", "great",
-  "between", "need", "large", "often", "hand", "high", "place", "small", "house", "long",
-  "while", "might", "world", "three", "still", "every", "found", "those", "under", "last",
-  "never", "same", "another", "much", "right", "old", "little", "before", "line", "own",
-  "very", "keep", "eyes", "once", "ask", "put", "went", "does", "done", "head",
-  "life", "each", "tell", "always", "set", "help", "here", "far", "both", "end",
-  "left", "run", "home", "read", "big", "move", "try", "kind", "hand", "again",
-  "change", "play", "spell", "air", "away", "animal", "point", "page", "letter", "mother",
-  "answer", "found", "study", "still", "learn", "should", "world", "high", "near", "add",
-  "food", "own", "below", "country", "plant", "last", "school", "father", "keep", "tree",
-  "never", "start", "city", "earth", "light", "thought", "head", "under", "story", "saw",
-  "left", "few", "while", "along", "next", "hard", "open", "seem", "next", "white",
-  "children", "begin", "got", "walk", "example", "ease", "paper", "group", "music", "those",
-  "both", "mark", "book", "letter", "until", "mile", "river", "car", "feet", "care",
-  "second", "enough", "plain", "girl", "usual", "young", "ready", "above", "ever", "red",
-  "list", "though", "feel", "talk", "bird", "soon", "body", "dog", "family", "direct",
-  "pose", "leave", "song", "measure", "door", "product", "black", "short", "number", "class",
-  "wind", "question", "happen", "complete", "ship", "area", "half", "rock", "order", "fire",
-  "south", "problem", "piece", "told", "knew", "pass", "since", "top", "whole", "king",
-  "space", "heard", "best", "hour", "better", "true", "during", "hundred", "five", "remember",
-  "step", "early", "hold", "west", "ground", "interest", "reach", "fast", "verb", "sing",
-  "listen", "six", "table", "travel", "less", "morning", "ten", "simple", "several", "vowel",
-  "toward", "war", "lay", "pattern", "slow", "center", "love", "person", "money", "serve",
-  "appear", "road", "map", "rain", "rule", "govern", "pull", "cold", "notice", "voice",
-  "unit", "power", "town", "fine", "certain", "fly", "fall", "lead", "cry", "dark",
-  "machine", "note", "wait", "plan", "figure", "star", "box", "noun", "field", "rest",
-  "correct", "able", "pound", "done", "beauty", "drive", "stood", "contain", "front", "teach",
-  "week", "final", "gave", "green", "oh", "quick", "develop", "ocean", "warm", "free",
-  "minute", "strong", "special", "mind", "behind", "clear", "tail", "produce", "fact", "street",
-  "inch", "multiply", "nothing", "course", "stay", "wheel", "full", "force", "blue", "object",
-  "decide", "surface", "deep", "moon", "island", "foot", "system", "busy", "test", "record",
-  "boat", "common", "gold", "possible", "plane", "stead", "dry", "wonder", "laugh", "thousand",
-  "ago", "ran", "check", "game", "shape", "equate", "hot", "miss", "brought", "heat",
-  "snow", "tire", "bring", "yes", "distant", "fill", "east", "paint", "language", "among",
-];
+import { WORD_BANK } from '../../../shared/wordBank.mjs';
 
 // How many words to pick per test
 const WORDS_PER_TEST = 40;
 const WORD_COUNT_OPTIONS = [10, 25, 40, 60, 100];
 
-
+// Fisher-Yates. Array.sort(() => 0.5 - Math.random()) is biased and produces an
+// uneven distribution, so a few words would appear far more often than others.
+function shuffle(items) {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
 
 // Pick N random words from the bank
 function pickWords(count) {
-  const shuffled = [...WORD_BANK].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
+  return shuffle(WORD_BANK).slice(0, count);
+}
+
+// Drill text is bigrams joined by DOUBLE spaces, with single spaces separating
+// tokens. Mirrors the format written by backend/practice.js.
+function splitDrillText(text) {
+  return text
+    .split('  ')
+    .flatMap((group) => group.trim().split(' '))
+    .filter(Boolean);
 }
 
 export default function TypingTest({
@@ -70,6 +41,8 @@ export default function TypingTest({
   targetedBigrams = [],
   onBackToDashboard,
   onSessionSaved,
+  entitlements,
+  onEntitlementsChanged,
 }) {
   // ─── Refs (don't trigger re-renders on every keystroke) ──────────
   const keystrokesRef = useRef([]);
@@ -90,17 +63,23 @@ export default function TypingTest({
   const isPractice = mode === 'practice';
   const { user } = useAuth();
   const navigate = useNavigate();
+  // Remaining AI allowance. Null until entitlements load, and null limit means
+  // unlimited (premium), so both cases simply hide the badge.
+  const aiQuota = entitlements?.usage?.llm_practice ?? null;
+  const aiPremium = entitlements?.premium === true;
   const [textMode, setTextMode] = useState('words'); // 'words' | 'quotes'
-  const [quoteIndex, setQuoteIndex] = useState(0);    // which quote set we're on
-  const [quoteTotal, setQuoteTotal] = useState(0);    // total quotes available
-  const [quotesLoading, setQuotesLoading] = useState(false);
   const [wordCount, setWordCount] = useState(WORDS_PER_TEST);
   const initialWords = isPractice && practiceWords.length > 0
     ? practiceWords
     : pickWords(wordCount);
 
   const [words, setWords] = useState(initialWords);
-  const [drillMode, setDrillMode] = useState(false);   // drill sub-mode toggle
+  const [practiceMode, setPracticeMode] = useState('words'); // 'words' | 'drill' | 'ai'
+  const [aiWords, setAiWords] = useState(null);   // passage generated this session
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiNotice, setAiNotice] = useState(null);
+  // AI tab selected but nothing generated yet — the words area shows the button.
+  const aiNeedsGeneration = isPractice && practiceMode === 'ai' && !aiWords;
 
   // ─── Fetch quotes from backend ────────────────────────────────────
   const [quoteCount, setQuoteCount] = useState(5);
@@ -109,20 +88,14 @@ export default function TypingTest({
   const fetchQuotes = useCallback((countOverride) => {
     if (isPractice) return;
     const count = countOverride ?? quoteCount;
-    setQuotesLoading(true);
     apiFetch(`/api/quotes?count=${count}&category=seal`)
       .then(res => res.json())
       .then(json => {
-        setQuoteTotal(json.total_available || 0);
         const quoteText = json.quotes.map(q => q.text).join(' ');
-        const quoteWords = quoteText.split(/\s+/);
-        setWords(quoteWords);
-        setQuoteIndex(1);
-        setQuotesLoading(false);
+        setWords(quoteText.split(/\s+/));
       })
       .catch(() => {
         setWords(pickWords(wordCount));
-        setQuotesLoading(false);
       });
   }, [isPractice, quoteCount, wordCount]);
 
@@ -159,7 +132,8 @@ export default function TypingTest({
     setResultData(null);
     setCachedStats(null);
     setPostStatus('idle');
-    setDrillMode(false);
+    setPracticeMode('words');
+    setAiWords(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
@@ -274,11 +248,6 @@ export default function TypingTest({
       : 0;
 
     const keystrokes = keystrokesRef.current;
-
-    // ─── Debug: log collected keystroke data ─────────────────────
-    console.log("keystrokes:", keystrokes);
-    console.log("total keystrokes:", keystrokes.length);
-    console.log("sample:", JSON.stringify(keystrokes.slice(0, 5), null, 2));
 
     // Count correct characters (excluding space and backspace)
     const correctChars = keystrokes.filter(k => k.correct && k.key !== ' ' && k.key !== 'Backspace').length;
@@ -611,15 +580,20 @@ export default function TypingTest({
     typedWordsRef.current = [];
     startTimeRef.current = null;
     prevWpmRef.current = 0;
-    // Choose new words based on current mode
-    if (isPractice && practiceWords.length > 0) {
+    // Re-pick words for the CURRENT mode. An AI passage has already been paid
+    // for, so restarting reuses it rather than generating a new one, and the
+    // mode is preserved instead of dropping back to Words.
+    if (isPractice && practiceMode === 'ai' && aiWords) {
+      setWords(aiWords);
+    } else if (isPractice && practiceMode === 'drill' && drillText) {
+      setWords(splitDrillText(drillText));
+    } else if (isPractice && practiceWords.length > 0) {
       setWords(practiceWords);
     } else if (textMode === 'quotes') {
       fetchQuotes();
     } else {
       setWords(pickWords(wordCount));
     }
-    setDrillMode(false);
     setCurrentWordIndex(0);
     setUserInput('');
     setTestState('idle');
@@ -637,7 +611,7 @@ export default function TypingTest({
     // Hand focus back to the test so typing resumes immediately — if restart
     // was triggered from the keyboard, the button still holds focus.
     inputRef.current?.focus();
-  }, [isPractice, practiceWords, wordCount, textMode, fetchQuotes]);
+  }, [isPractice, practiceMode, aiWords, drillText, practiceWords, wordCount, textMode, fetchQuotes]);
 
   // ─── Switch between words / quotes text mode ─────────────────────
   const handleTextModeChange = useCallback((newMode) => {
@@ -669,41 +643,86 @@ export default function TypingTest({
     }
   }, [textMode, isPractice, fetchQuotes, wordCount]);
 
-  // ─── Toggle drill mode (practice only) ────────────────────────────
-  const toggleDrillMode = useCallback(() => {
-    if (!isPractice) return;
-    setDrillMode(prev => {
-      const next = !prev;
-      // Swap words: drill words or practice words
-      if (next && drillText) {
-        // Split drill text by double-space, then by single space
-        const drillWords = drillText.split('  ').flatMap(group => group.trim().split(' ')).filter(Boolean);
-        setWords(drillWords);
-      } else {
-        setWords(practiceWords);
+  // ─── Practice mode: Words / Drills / AI ────────────────────────────
+  // Extracted so all three modes share one reset path. The AI branch awaits a
+  // request, so it cannot live inside a state updater.
+  const resetTestState = useCallback(() => {
+    keystrokesRef.current = [];
+    wordStatusesRef.current = [];
+    typedWordsRef.current = [];
+    startTimeRef.current = null;
+    prevWpmRef.current = 0;
+    setCurrentWordIndex(0);
+    setUserInput('');
+    setTestState('idle');
+    setWordStatuses([]);
+    setTypedWords([]);
+    setLiveWpm(0);
+    setWpmPulseKey(0);
+    setLiveAccuracy(100);
+    setLiveWordAccuracy(100);
+    setElapsed(0);
+    setResultData(null);
+    setCachedStats(null);
+    setPostStatus('idle');
+  }, []);
+
+  // Switching tabs only chooses a mode — it never spends quota. Generation is a
+  // separate, explicit action: the button in the words area.
+  const selectPracticeMode = useCallback((next) => {
+    if (!isPractice || aiLoading) return;
+    if (next === practiceMode) return;
+
+    setAiNotice(null);
+    setPracticeMode(next);
+    setWords(
+      next === 'drill'
+        ? splitDrillText(drillText)
+        : next === 'ai'
+          ? (aiWords ?? [])
+          : practiceWords
+    );
+    resetTestState();
+  }, [isPractice, aiLoading, practiceMode, drillText, aiWords, practiceWords, resetTestState]);
+
+  const generateAiPassage = useCallback(async () => {
+    if (aiLoading) return;
+    setAiLoading(true);
+    setAiNotice(null);
+
+    try {
+      const response = await apiFetch('/api/practice/generate-llm', { method: 'POST' });
+      const json = await response.json().catch(() => ({}));
+
+      if (response.status === 429) {
+        setAiNotice(json.detail || 'You have used today’s AI passages.');
+        return;
       }
-      // Reset test state
-      keystrokesRef.current = [];
-      wordStatusesRef.current = [];
-      typedWordsRef.current = [];
-      startTimeRef.current = null;
-      prevWpmRef.current = 0;
-      setCurrentWordIndex(0);
-      setUserInput('');
-      setTestState('idle');
-      setWordStatuses([]);
-      setTypedWords([]);
-      setLiveWpm(0);
-      setWpmPulseKey(0);
-      setLiveAccuracy(100);
-      setLiveWordAccuracy(100);
-      setElapsed(0);
-      setResultData(null);
-      setCachedStats(null);
-      setPostStatus('idle');
-      return next;
-    });
-  }, [isPractice, drillText, practiceWords]);
+
+      if (!response.ok || json.error) {
+        setAiNotice('Could not generate a passage just now. Please try again.');
+        return;
+      }
+
+      // Quota is spent server-side once a passage validates, so refresh the badge.
+      onEntitlementsChanged?.();
+
+      if (json.engine !== 'llm' || !json.practice_words?.length) {
+        // Never hand back word practice under an AI label. Nothing changed and no
+        // quota was used, so say so rather than silently swapping.
+        setAiNotice('AI is unavailable right now. Your daily allowance is untouched.');
+        return;
+      }
+
+      setAiWords(json.practice_words);
+      setWords(json.practice_words);
+      resetTestState();
+    } catch {
+      setAiNotice('Could not generate a passage just now. Please try again.');
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiLoading, resetTestState, onEntitlementsChanged]);
 
   // ─── Render ───────────────────────────────────────────────────────
 
@@ -836,31 +855,130 @@ export default function TypingTest({
     );
   };
 
-  // --- Render word rows (wrap words naturally, 3 rows max) ---
-  const renderWords = () => (
-    <div
-      className="overflow-hidden max-w-3xl mx-auto select-none"
-      style={{ height: viewportHeight != null ? `${viewportHeight}px` : 'auto' }}
-    >
-      <div
-        ref={wordsContainerRef}
-        className="flex flex-wrap gap-x-3 gap-y-2 justify-center text-2xl font-mono leading-relaxed"
-        style={{
-          transform: `translateY(-${scrollOffset}px)`,
-          transition: testState === 'running' ? 'transform 0.3s ease' : 'none',
-        }}
-      >
-        {words.map((word, i) => renderWord(word, i))}
-      </div>
+  // --- Generate prompt, shown INSIDE the words box until a passage exists ---
+  // Deliberately has no seal of its own: renderLiveWpm already draws the big one
+  // above, and a second smaller seal is what made the layout look like it jumped.
+  const renderAiGenerate = () => (
+    // No height utilities here: the wrapper above centres this block and grows to
+    // fit it. Any `h-full` would resolve against an auto-height parent and do
+    // nothing, so its absence is deliberate.
+    <div className="flex flex-col items-center justify-center gap-3 py-2">
+      {aiLoading ? (
+        <p className="theme-text-soft text-sm text-center">
+          Writing a passage dense in{' '}
+          <span className="theme-text">
+            {targetedBigrams.slice(0, 4).map((b) => b.bigram).join(', ')}
+          </span>
+          …
+        </p>
+      ) : (
+        <>
+          <p className="theme-text-soft text-sm text-center max-w-md">
+            A short passage written around the letter pairs you miss most
+            {targetedBigrams.length > 0 && (
+              <> — {targetedBigrams.slice(0, 4).map((b) => b.bigram).join(', ')}</>
+            )}
+            .
+          </p>
+
+          <button
+            onClick={generateAiPassage}
+            className="font-pixel px-6 py-2 rounded-lg text-sm font-bold transition-colors bg-amber-500 text-slate-900 hover:bg-amber-400"
+          >
+            Generate passage
+          </button>
+
+          <p className="text-xs theme-text-subtle">
+            {aiQuota && !aiPremium
+              ? `Uses one of your ${aiQuota.limit} daily AI passages. ${aiQuota.remaining} left today`
+              : 'Nothing is generated until you press the button.'}
+          </p>
+        </>
+      )}
     </div>
   );
+
+  // --- Hint under the mode tabs ---
+  const renderModeHint = () => {
+    if (!isPractice) return null;
+
+    // Failures are reported here, below the box, and never inside it. The words
+    // box is clipped to three rows, so a two-line notice placed in there was cut
+    // off mid-sentence — the message disappeared exactly when it mattered most.
+    if (aiNotice) {
+      return <p className="text-xs text-amber-400/90 max-w-sm text-center">{aiNotice}</p>;
+    }
+
+    // While generating, or before a passage exists, the box owns the messaging.
+    if (aiLoading || aiNeedsGeneration) return null;
+
+    // Only shown in AI mode — the remaining count is noise while practising with
+    // words or drills.
+    const showQuota = practiceMode === 'ai' && aiQuota && !aiPremium;
+    const canRefresh = practiceMode === 'ai' && aiWords && testState === 'idle';
+    if (!showQuota && !canRefresh) return null;
+
+    return (
+      <p className="flex items-center gap-3 text-xs theme-text-subtle">
+        {showQuota && (
+          <span>
+            {aiQuota.remaining} of {aiQuota.limit} AI passages left today
+          </span>
+        )}
+        {canRefresh && (
+          <button
+            onClick={generateAiPassage}
+            className="underline underline-offset-2 hover:text-amber-400 transition-colors"
+          >
+            New passage
+          </button>
+        )}
+      </p>
+    );
+  };
+
+  // --- Render word rows (wrap words naturally, 3 rows max) ---
+  const renderWords = () => {
+    // Two different needs share this box. The word grid must stay clipped to
+    // exactly three rows so nothing shifts when the mode changes, so it keeps a
+    // fixed height. The AI panel is centred prose rather than a grid, so it gets
+    // a floor instead of a lid — pinned to that same fixed height it had no room
+    // to grow, and anything past the third row was silently cut off.
+    const boxHeight = viewportHeight != null ? `${viewportHeight}px` : undefined;
+    return (
+      <div
+        className={`max-w-3xl mx-auto select-none ${
+          aiNeedsGeneration ? 'flex items-center justify-center' : 'overflow-hidden'
+        }`}
+        style={aiNeedsGeneration ? { minHeight: boxHeight } : { height: boxHeight }}
+      >
+        {aiNeedsGeneration ? (
+          renderAiGenerate()
+        ) : (
+          <div
+            ref={wordsContainerRef}
+            className="flex flex-wrap gap-x-3 gap-y-2 justify-center text-2xl font-mono leading-relaxed"
+            style={{
+              transform: `translateY(-${scrollOffset}px)`,
+              transition: testState === 'running' ? 'transform 0.3s ease' : 'none',
+            }}
+          >
+            {words.map((word, i) => renderWord(word, i))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // --- Render progress bar ---
   const renderProgressBar = () => {
     const done = wordStatuses.filter(s => s !== null && s !== undefined).length;
     const pct = words.length > 0 ? Math.round((done / words.length) * 100) : 0;
     return (
-      <div className="w-full max-w-xl mx-auto mb-5">
+      // `invisible` (visibility: hidden), NOT conditional rendering: the element
+      // keeps its box, so hiding it before a passage exists cannot reflow the
+      // rest of the page. Do not "simplify" this into a ternary.
+      <div className={`w-full max-w-xl mx-auto mb-5 ${aiNeedsGeneration ? 'invisible' : ''}`}>
         <div className="h-1.5 theme-panel rounded-none overflow-hidden">
           <div
             className="h-full theme-accent rounded-none transition-all duration-500 ease-out"
@@ -904,7 +1022,9 @@ export default function TypingTest({
   const renderLiveWpm = () => (
     <div className="flex items-center justify-center gap-6 mb-3">
       {/* Animated Typing Seal */}
-      <div className="relative w-40 h-40 select-none pointer-events-none">
+      {/* Pulsing while a passage generates, so the "working" cue reuses the seal
+          that is already here rather than introducing a second, smaller one. */}
+      <div className={`relative w-40 h-40 select-none pointer-events-none ${aiLoading ? 'animate-pulse' : ''}`}>
         <img
           src="/sealdown.png"
           alt="Seal typing down"
@@ -936,11 +1056,20 @@ export default function TypingTest({
   );
 
   // --- Render live stats bar ---
+  // Hidden with `invisible` rather than unmounted, for the same reason as the
+  // progress bar: the row must keep its height so nothing shifts.
   const renderStatsBar = () => (
-    <div className="flex gap-6 justify-center text-sm theme-text-muted font-mono mb-6">
+    <div
+      className={`flex gap-6 justify-center text-sm theme-text-muted font-mono mb-6 ${
+        aiNeedsGeneration ? 'invisible' : ''
+      }`}
+    >
       <span>Acc: <span className="text-amber-400 font-bold">{liveAccuracy}%</span></span>
       <span>Word Acc: <span className="text-amber-400 font-bold">{liveWordAccuracy}%</span></span>
-      <span>Word <span className="text-amber-400 font-bold">{currentWordIndex + 1}</span> / {words.length}</span>
+      <span>
+        Word <span className="text-amber-400 font-bold">{words.length > 0 ? currentWordIndex + 1 : 0}</span> /{' '}
+        {words.length}
+      </span>
       <span>{elapsed}s</span>
     </div>
   );
@@ -981,9 +1110,6 @@ export default function TypingTest({
         {postStatus === 'error' && (
           <div className="theme-danger text-sm">⚠ Results not saved — backend unavailable</div>
         )}
-        {postStatus === 'done' && (
-          <div className="text-green-500 text-sm">✓ Results saved</div>
-        )}
         {postStatus === 'guest' && (
           <button
             onClick={() => navigate('/login')}
@@ -993,19 +1119,6 @@ export default function TypingTest({
           </button>
         )}
 
-        {/* Practice-specific messaging */}
-        {isPractice && (
-          <p className="text-slate-400 text-sm max-w-md text-center">
-            Practice complete! Return to Dashboard to see if your bigram stats improved.
-          </p>
-        )}
-
-        {/* Quotes-specific messaging */}
-        {textMode === 'quotes' && !isPractice && (
-          <p className="text-slate-400 text-sm max-w-md text-center">
-            🦭 Seal Fact {quoteIndex} of {quoteTotal > 0 ? quoteTotal : '?'}
-          </p>
-        )}
 
         <div className="flex gap-4 mt-4">
           <button
@@ -1023,7 +1136,7 @@ export default function TypingTest({
             </button>
           ) : (
             <button
-              onClick={onViewDashboard || (() => alert('Dashboard coming soon'))}
+              onClick={onViewDashboard}
               className="px-6 py-2 theme-panel-muted theme-panel-hover theme-text font-bold rounded-lg transition-colors"
             >
               View Dashboard
@@ -1120,30 +1233,50 @@ export default function TypingTest({
             </div>
           )}
 
-          {/* Drill mode toggle — below the words area, practice only */}
-          {isPractice && drillText && (
-            <div className="relative flex gap-2 mt-6">
-              <button
-                onClick={() => drillMode && toggleDrillMode()}
-                className={`font-pixel px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${
-                  !drillMode
-                    ? 'bg-amber-500 text-slate-900'
-                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                }`}
-              >
-                Words
-              </button>
-              <button
-                onClick={() => !drillMode && toggleDrillMode()}
-                className={`font-pixel px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${
-                  drillMode
-                    ? 'bg-amber-500 text-slate-900'
-                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                }`}
-              >
-                Drills
-              </button>
-              {renderRestart()}
+          {/* Practice mode — Words / Drills / AI */}
+          {isPractice && (
+            <div className="flex flex-col items-center gap-2 mt-6">
+              <div className="relative flex gap-2">
+                <button
+                  onClick={() => selectPracticeMode('words')}
+                  disabled={aiLoading}
+                  className={`font-pixel px-4 py-1.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 ${
+                    practiceMode === 'words'
+                      ? 'bg-amber-500 text-slate-900'
+                      : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                  }`}
+                >
+                  Words
+                </button>
+                {drillText && (
+                  <button
+                    onClick={() => selectPracticeMode('drill')}
+                    disabled={aiLoading}
+                    className={`font-pixel px-4 py-1.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 ${
+                      practiceMode === 'drill'
+                        ? 'bg-amber-500 text-slate-900'
+                        : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                    }`}
+                  >
+                    Drills
+                  </button>
+                )}
+                <button
+                  onClick={() => selectPracticeMode('ai')}
+                  disabled={aiLoading}
+                  title="A passage written for your own weak letter pairs"
+                  className={`font-pixel px-4 py-1.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-70 ${
+                    practiceMode === 'ai'
+                      ? 'bg-amber-500 text-slate-900'
+                      : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                  }`}
+                >
+                  {aiLoading ? 'AI…' : 'AI'}
+                </button>
+                {renderRestart()}
+              </div>
+
+              {renderModeHint()}
             </div>
           )}
         </>

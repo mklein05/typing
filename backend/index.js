@@ -44,12 +44,18 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Blocked by CORS'));
+      // Passing `false` (rather than an Error) simply omits the CORS headers, so
+      // the browser blocks the response. Throwing here produced a 500 with no
+      // CORS headers, which is a confusing signal for a deliberate rejection.
+      callback(null, false);
     }
   },
   credentials: true
 }));
-app.use(express.json());
+// Keystroke records are ~200 bytes each, and Quotes mode can run past 1,000
+// keystrokes — well over express.json()'s 100kb default, which silently failed
+// the save. 2mb has comfortable headroom.
+app.use(express.json({ limit: '2mb' }));
 
 // Routes
 app.get('/', (req, res) => {
@@ -203,9 +209,8 @@ app.post('/api/practice/generate-llm', requireAuth, async (req, res) => {
 app.get('/api/quotes', (req, res) => {
   const count = parseInt(req.query.count, 10) || 10;
   const category = req.query.category || 'seal';
-  const difficulty = req.query.difficulty ? parseInt(req.query.difficulty, 10) : null;
 
-  res.json(getQuotes(count, category, difficulty));
+  res.json(getQuotes(count, category));
 });
 
 // Off-site backup trigger, for an external scheduler (Railway cron, GitHub

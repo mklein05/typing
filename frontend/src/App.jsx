@@ -43,23 +43,28 @@ function Header({ practiceData, setPracticeData, practiceAvailable, entitlements
   }
 
   return (
-    <header className="flex items-center justify-between px-6 py-3 border-b border-slate-800 shrink-0">
-      <button
-        onClick={() => navigate('/')}
-        title="typingSeal — go to test"
-        className="flex items-center gap-3 rounded-lg transition-opacity hover:opacity-80 cursor-pointer"
-      >
-        <img
-          src="/seallogo.png"
-          alt="Seal typing down"
-          className="w-full h-10 "
-        />
-        <span className="font-pixel theme-text font-bold text-lg">
-          typingSeal
-        </span>
-      </button>
+    // The nav is centred by giving BOTH sides the same flex width, not by
+    // justify-between. With justify-between it centred in the leftover space, so
+    // the wider logo block pushed it off-centre to the right.
+    <header className="flex items-center px-6 py-3 border-b border-slate-800 shrink-0">
+      <div className="flex-1 min-w-0 flex items-center">
+        <button
+          onClick={() => navigate('/')}
+          title="typingSeal — go to test"
+          className="flex items-center gap-3 rounded-lg transition-opacity hover:opacity-80 cursor-pointer"
+        >
+          <img
+            src="/seallogo.png"
+            alt="Seal typing down"
+            className="w-full h-10 "
+          />
+          <span className="font-pixel theme-text font-bold text-lg">
+            typingSeal
+          </span>
+        </button>
+      </div>
 
-      <nav className="flex gap-1 theme-panel rounded-lg p-0.5">
+      <nav className="shrink-0 flex gap-1 theme-panel rounded-lg p-0.5">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.key;
           const isLocked = tab.locked;
@@ -88,22 +93,24 @@ function Header({ practiceData, setPracticeData, practiceAvailable, entitlements
         })}
       </nav>
 
-      {user ? (
-        <UserMenu entitlements={entitlements} />
-      ) : (
-        <button
-          onClick={() => navigate('/login')}
-          className="font-pixel px-4 py-1.5 rounded-lg border border-slate-700 theme-text-soft text-sm font-bold transition-colors hover:border-amber-500/60 hover:bg-slate-800"
-        >
-          Sign in
-        </button>
-      )}
+      <div className="flex-1 min-w-0 flex items-center justify-end">
+        {user ? (
+          <UserMenu entitlements={entitlements} />
+        ) : (
+          <button
+            onClick={() => navigate('/login')}
+            className="font-pixel px-4 py-1.5 rounded-lg border border-slate-700 theme-text-soft text-sm font-bold transition-colors hover:border-amber-500/60 hover:bg-slate-800"
+          >
+            Sign in
+          </button>
+        )}
+      </div>
     </header>
   );
 }
 
 /** Pages — renders the correct component based on current route. */
-function Pages({ practiceData, setPracticeData, onSessionSaved }) {
+function Pages({ practiceData, setPracticeData, onSessionSaved, entitlements, onEntitlementsChanged }) {
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -150,6 +157,8 @@ function Pages({ practiceData, setPracticeData, onSessionSaved }) {
                 onViewDashboard={() => navigate('/dashboard')}
                 onBackToDashboard={() => navigate('/dashboard')}
                 onSessionSaved={onSessionSaved}
+                entitlements={entitlements}
+                onEntitlementsChanged={onEntitlementsChanged}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center">
@@ -277,6 +286,8 @@ function AppLayout() {
         practiceData={practiceData}
         setPracticeData={setPracticeData}
         onSessionSaved={handleSessionSaved}
+        entitlements={entitlements}
+        onEntitlementsChanged={refreshEntitlements}
       />
       {/* Google requires the privacy policy to be linked from the homepage. */}
       <footer className="shrink-0 border-t border-slate-800 px-6 py-2.5 flex items-center justify-between text-xs">

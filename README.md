@@ -7,7 +7,8 @@ A MonkeyType-style typing test with personalised practice, bigram analytics and 
 | Path | What it is |
 | --- | --- |
 | `frontend/` | React 19 + Vite app — typing test, dashboard, charts |
-| `backend/` | Node 20 + Express API — SQLite (`better-sqlite3`), Supabase auth |
+| `backend/` | Node 22 + Express API — SQLite (`better-sqlite3`), Supabase auth |
+| `shared/` | `wordBank.mjs` — the one word list, imported by both frontend and backend |
 
 ## Local development
 
@@ -256,7 +257,15 @@ Two services built from this one repository:
 | Service | Root directory | Start command |
 | --- | --- | --- |
 | Backend | `backend` | `npm start` |
-| Frontend | `frontend` | Vite build output (`dist/`) |
+| Frontend | `frontend` | `npm start` (`serve -s dist`) |
+
+`serve -s` is required, not cosmetic: the app uses client-side routing, so
+`/dashboard`, `/practice` and `/privacy` only resolve on a direct load if unknown
+paths fall back to `index.html`.
+
+Both services import `shared/wordBank.mjs` from the repository root, so each build
+must have access to paths outside its own service directory — build from the repo
+root, or otherwise ensure the `shared/` directory is in the build context.
 
 Backend environment variables must be set in the Railway dashboard, including
 `ALLOWED_ORIGINS` with the deployed frontend URL — otherwise CORS will block every request.
@@ -267,6 +276,7 @@ Backend environment variables must be set in the Railway dashboard, including
 | --- | --- | --- |
 | frontend | `npm run dev` | Vite dev server with HMR |
 | frontend | `npm run build` | Production build into `frontend/dist` |
+| frontend | `npm start` | Serve the build with SPA fallback (`serve -s dist`) |
 | frontend | `npm run preview` | Serve the production build locally |
 | frontend | `npm run lint` | Oxlint |
 | backend | `npm run dev` | Express with `--watch` |
