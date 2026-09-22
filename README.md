@@ -8,7 +8,7 @@ A MonkeyType-style typing test with personalised practice, bigram analytics and 
 | --- | --- |
 | `frontend/` | React 19 + Vite app — typing test, dashboard, charts |
 | `backend/` | Node 22 + Express API — SQLite (`better-sqlite3`), Supabase auth |
-| `shared/` | `wordBank.mjs` — the one word list, imported by both frontend and backend |
+| `scripts/` | Repo maintenance scripts (word-bank drift check) |
 
 ## Local development
 
@@ -263,9 +263,11 @@ Two services built from this one repository:
 `/dashboard`, `/practice` and `/privacy` only resolve on a direct load if unknown
 paths fall back to `index.html`.
 
-Both services import `shared/wordBank.mjs` from the repository root, so each build
-must have access to paths outside its own service directory — build from the repo
-root, or otherwise ensure the `shared/` directory is in the build context.
+The typing word list is duplicated on purpose in `frontend/src/components/TypingTest.jsx`
+and `backend/practice.js`, so each service builds from its own directory with no
+cross-directory imports. Edit both copies together and run
+`node scripts/check-word-bank.mjs` from the repo root — it exits non-zero if they
+ever drift apart.
 
 Backend environment variables must be set in the Railway dashboard, including
 `ALLOWED_ORIGINS` with the deployed frontend URL — otherwise CORS will block every request.

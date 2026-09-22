@@ -10,7 +10,7 @@ Two independent npm projects, **no root manifest or workspace**. `npm install` a
 | --- | --- | --- |
 | `backend/` | Node 22, Express 5, ESM, SQLite (`better-sqlite3`), Supabase auth | `index.js` |
 | `frontend/` | React 19, Vite 8, react-router-dom 7, Tailwind v3, recharts | `src/main.jsx` → `src/App.jsx` |
-| `shared/` | `wordBank.mjs` — the one word list, imported by both sides | — |
+| `scripts/` | Repo maintenance scripts (word-bank drift check) | — |
 
 - **Node 22.x required** (`engines` in both `package.json`). The README says Node 20 — that is stale; trust `engines`. `better-sqlite3` is a native addon, so reinstall/rebuild if the Node major changes.
 - `.env` files and `*.db` are gitignored on purpose; never commit secrets or local database files. `backend/.env.example` documents the backend variables.
@@ -43,7 +43,7 @@ cd frontend && npm install && npm run dev
 - **Theme**: use the `.theme-*` component classes from `src/index.css` (`.theme-panel`, `.theme-text`, `.theme-accent`, …) rather than raw palette colors. `slate`/`amber` are overridden in `tailwind.config.js` and all border radii are zeroed except `rounded-full` (kept circular for spinners/avatars). Chart and keyboard-heatmap colors deliberately use Tailwind defaults so performance meaning (green→red) is preserved — do not theme them.
 - **Monocraft font**: ligatures are disabled because they merge characters and break per-character coloring/caret placement in the test. Use the `font-pixel` class and whole multiples of 9px (18/36/72px) for crisp rendering.
 - **`src/components/TypingTest.jsx`** is the core (~1300 lines) and contains intentional choices that look like mistakes: a hidden `readOnly` input captures keystrokes; the progress/stats bars use `invisible` (not conditional rendering) to avoid reflow; restart reuses an already-paid-for AI passage instead of regenerating; quota is peeked then consumed on success server-side. Preserve these.
-- **One shared word bank**: `shared/wordBank.mjs` (repo root) is imported by both `TypingTest.jsx` and `backend/practice.js`. Edit it once and both the standard test and practice pick it up. Because it sits outside both service directories, Vite's dev server reads it via `server.fs.allow` in `frontend/vite.config.js`, and each Railway build must have the repo root in context. It must stay `.mjs` so Node treats it as ESM without a nearest `package.json`.
+- **The word bank is intentionally duplicated** in `frontend/src/components/TypingTest.jsx` and `backend/practice.js`. Do not try to share one file across the two services: Railway builds each from its own directory, so a repo-root module is not in either build context. Edit both copies and run `node scripts/check-word-bank.mjs` from the repo root — it fails on drift.
 - Vite inlines `VITE_*` env at dev-server start/build — restart the dev server after editing `frontend/.env`.
 
 ## Data, backups, LLM
