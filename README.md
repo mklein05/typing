@@ -263,6 +263,24 @@ Two services built from this one repository:
 `/dashboard`, `/practice`, `/privacy` and `/terms` only resolve on a direct load
 if unknown paths fall back to `index.html`.
 
+### Frontend caching
+
+`frontend/public/serve.json` sets the cache policy for the static server (it is
+copied into `dist/` by Vite, where `serve` picks it up):
+
+- `index.html` and every SPA route → `Cache-Control: no-cache`, so a deploy is
+  picked up on the next load instead of serving a stale app shell.
+- `assets/**` (Vite's content-hashed output) → `max-age=31536000, immutable`.
+
+Without this, `index.html` was served with no cache headers at all, and a
+Cloudflare zone in front of the site applied its 4-hour default browser cache
+TTL to assets. A browser holding an old `index.html` would keep loading the old
+hashed bundles, which looked like the site randomly reverting to an old build.
+
+If Cloudflare proxies the frontend, set **Caching → Browser Cache TTL** to
+*Respect Existing Headers* (otherwise it can override the origin's policy), and
+purge the cache once after deploying this change.
+
 The typing word list is duplicated on purpose in `frontend/src/components/TypingTest.jsx`
 and `backend/practice.js`, so each service builds from its own directory with no
 cross-directory imports. Edit both copies together and run
