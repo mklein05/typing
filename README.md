@@ -260,8 +260,8 @@ Two services built from this one repository:
 | Frontend | `frontend` | `npm start` (`serve -s dist`) |
 
 `serve -s` is required, not cosmetic: the app uses client-side routing, so
-`/dashboard`, `/practice` and `/privacy` only resolve on a direct load if unknown
-paths fall back to `index.html`.
+`/dashboard`, `/practice`, `/privacy` and `/terms` only resolve on a direct load
+if unknown paths fall back to `index.html`.
 
 The typing word list is duplicated on purpose in `frontend/src/components/TypingTest.jsx`
 and `backend/practice.js`, so each service builds from its own directory with no
@@ -283,6 +283,7 @@ Backend environment variables must be set in the Railway dashboard, including
 | frontend | `npm run lint` | Oxlint |
 | backend | `npm run dev` | Express with `--watch` |
 | backend | `npm start` | Express (used by Railway) |
+| backend | `npm test` | Run the backend test suite (`node --test`) |
 | backend | `npm run backup` | Take and upload a snapshot now |
 | backend | `npm run restore` | Restore a snapshot over the live database |
 

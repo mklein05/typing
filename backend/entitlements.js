@@ -25,12 +25,11 @@ function freeLimit(feature) {
  * UTC day bucket. Deliberately UTC: one boundary for everyone, and no timezone
  * to store or reason about. A user's allowance rolls over at midnight UTC.
  */
-function currentPeriod() {
-  return new Date().toISOString().slice(0, 10);
+function currentPeriod(now = new Date()) {
+  return now.toISOString().slice(0, 10);
 }
 
-function periodResetAt() {
-  const now = new Date();
+function periodResetAt(now = new Date()) {
   return new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
   ).toISOString();
@@ -40,15 +39,15 @@ function periodResetAt() {
  * A plan is premium only while `premium_until` is absent or in the future.
  * An unparseable date fails closed, which is the safe direction.
  */
-function isPremium(row) {
+function isPremium(row, now = new Date()) {
   if (!row || row.plan !== 'premium') return false;
   if (!row.premium_until) return true;
-  return Date.parse(row.premium_until) > Date.now();
+  return Date.parse(row.premium_until) > now.getTime();
 }
 
-function planOf(userId) {
+function planOf(userId, now = new Date()) {
   const row = db.prepare('SELECT plan, premium_until FROM users WHERE id = ?').get(userId);
-  const premium = isPremium(row);
+  const premium = isPremium(row, now);
   return {
     plan: premium ? 'premium' : 'free',
     premium,
@@ -56,7 +55,7 @@ function planOf(userId) {
   };
 }
 
-function quotaSnapshot(userId, feature, plan) {
+function quotaSnapshot(userId, feature, plan, now = new Date()) {
   const limit = plan.premium ? null : freeLimit(feature);
   const used =
     db
@@ -64,32 +63,32 @@ function quotaSnapshot(userId, feature, plan) {
         `SELECT used FROM usage_counters
           WHERE user_id = ? AND feature = ? AND period_start = ?`
       )
-      .get(userId, feature, currentPeriod())?.used ?? 0;
+      .get(userId, feature, currentPeriod(now))?.used ?? 0;
 
   return {
     feature,
     used,
     limit,
     remaining: limit === null ? null : Math.max(0, limit - used),
-    resets_at: periodResetAt(),
+    resets_at: periodResetAt(now),
   };
 }
 
 /** Full entitlement state for a user, including current usage. */
-export function getEntitlements(userId) {
+export function getEntitlements(userId, now = new Date()) {
   if (!userId) {
     return { plan: 'guest', premium: false, premium_until: null, usage: {} };
   }
 
   ensureUser(userId);
-  const plan = planOf(userId);
+  const plan = planOf(userId, now);
 
   return {
     plan: plan.plan,
     premium: plan.premium,
     premium_until: plan.premiumUntil,
     usage: Object.fromEntries(
-      FEATURES.map((f) => [f, quotaSnapshot(userId, f, plan)])
+      FEATURES.map((f) => [f, quotaSnapshot(userId, f, plan, now)])
     ),
   };
 }
@@ -99,7 +98,7 @@ export function getEntitlements(userId) {
  * `allowed`, so a caller can respond with the remaining quota in one round trip
  * instead of following up with a second request.
  */
-export function consumeQuota(userId, feature) {
+export function consumeQuota(userId, feature, now = new Date()) {
   if (!userId) {
     return {
       allowed: false,
@@ -109,13 +108,13 @@ export function consumeQuota(userId, feature) {
       used: 0,
       limit: 0,
       remaining: 0,
-      resets_at: periodResetAt(),
+      resets_at: periodResetAt(now),
     };
   }
 
   ensureUser(userId);
-  const plan = planOf(userId);
-  const before = quotaSnapshot(userId, feature, plan);
+  const plan = planOf(userId, now);
+  const before = quotaSnapshot(userId, feature, plan, now);
 
   if (before.limit !== null && before.used >= before.limit) {
     return { allowed: false, ...plan, ...before };
@@ -129,12 +128,12 @@ export function consumeQuota(userId, feature) {
     `INSERT INTO usage_counters (user_id, feature, period_start, used)
      VALUES (?, ?, ?, 1)
      ON CONFLICT(user_id, feature, period_start) DO UPDATE SET used = used + 1`
-  ).run(userId, feature, currentPeriod());
+  ).run(userId, feature, currentPeriod(now));
 
   return {
     allowed: true,
     ...plan,
-    ...quotaSnapshot(userId, feature, plan),
+    ...quotaSnapshot(userId, feature, plan, now),
   };
 }
 
@@ -144,7 +143,7 @@ export function consumeQuota(userId, feature) {
  * Used to reject a request up front, before doing expensive work that the user
  * would then be charged for even if it failed.
  */
-export function peekQuota(userId, feature) {
+export function peekQuota(userId, feature, now = new Date()) {
   if (!userId) {
     return {
       allowed: false,
@@ -154,13 +153,13 @@ export function peekQuota(userId, feature) {
       used: 0,
       limit: 0,
       remaining: 0,
-      resets_at: periodResetAt(),
+      resets_at: periodResetAt(now),
     };
   }
 
   ensureUser(userId);
-  const plan = planOf(userId);
-  const snapshot = quotaSnapshot(userId, feature, plan);
+  const plan = planOf(userId, now);
+  const snapshot = quotaSnapshot(userId, feature, plan, now);
 
   return {
     allowed: snapshot.limit === null || snapshot.used < snapshot.limit,

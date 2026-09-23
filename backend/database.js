@@ -2,8 +2,10 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
-import { DB_PATH } from './dbpath.js';
+import { resolveDbPath } from './dbpath.js';
 import { SEAL_FACTS } from './sealFacts.js';
+
+const DB_PATH = resolveDbPath();
 
 // better-sqlite3 will not create missing parent directories itself.
 if (DB_PATH !== ':memory:') {

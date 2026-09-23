@@ -16,13 +16,16 @@
 // process keeps its old handle until then, which is what you want: nothing is
 // swapped out from under a live request.
 
+import 'dotenv/config';
+
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 
-import { DB_PATH } from './dbpath.js';
+import { resolveDbPath } from './dbpath.js';
 import { listBackups, downloadBackup, backupLabel } from './backup.js';
 
+const DB_PATH = resolveDbPath();
 const wanted = process.argv[2];
 
 async function main() {

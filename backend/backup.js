@@ -11,6 +11,10 @@
 // flight can produce a torn file that still opens without complaint and is
 // quietly missing rows.
 
+// First import: `npm run backup` is its own entrypoint, so it must load .env
+// itself now that dbpath.js no longer does it as a side effect.
+import 'dotenv/config';
+
 import Database from 'better-sqlite3';
 import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';

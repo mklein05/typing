@@ -20,22 +20,25 @@ Two independent npm projects, **no root manifest or workspace**. `npm install` a
 ```bash
 # backend  -> http://localhost:8000
 cd backend && npm install && npm run dev      # node --watch index.js
+cd backend && npm test                        # node --test (test/*.test.js)
 
 # frontend -> http://localhost:5173
 cd frontend && npm install && npm run dev
 ```
 
-- **There is no test suite, no typecheck, and no CI** (no `.github/`, no test runner anywhere). Do not look for one or claim tests pass.
-- The only automated verification is frontend `npm run lint` (oxlint, config `frontend/.oxlintrc.json`) and `npm run build` (Vite). The backend has none — verify by running `npm run dev` and calling the API.
+- **Backend tests**: plain `node:test` (no dependencies) in `backend/test/`. There is no frontend test runner, no typecheck, and no CI. Don't claim frontend tests pass — verify with `npm run lint` and `npm run build`.
+- Other automated verification: frontend `npm run lint` (oxlint, config `frontend/.oxlintrc.json`) and `npm run build` (Vite); `node scripts/check-word-bank.mjs` at the repo root (also covered by the backend suite).
+- Tests that touch the DB set `DB_PATH=':memory:'` before dynamically importing `database.js` (it opens the DB at import). Never import it statically in a test. `createSession` needs a `users` row, so call `ensureUser(userId)` first.
 - `frontend` also has `npm run preview`; `backend` has `npm run backup` / `npm run restore`.
 
 ## Architecture notes
 
 - **Auth**: Supabase issues the JWT; `backend/auth.js` verifies it per request with `supabase.auth.getUser(token)` and sets `req.userId`. Every `/api/*` route requires a Bearer token **except** `GET /api/quotes` (public) and `POST /api/admin/backup` (uses an `x-backup-secret` header, fails closed). Frontend requests go through `src/api.js` `apiFetch()`, which attaches the token and signs out on 401.
 - **Guests**: unauthenticated users can take tests and use Quotes mode, but sessions are never persisted; `/dashboard` is the only route requiring sign-in.
-- **Env loading gotcha**: ESM evaluates imports before a module body, so `dotenv.config()` in `index.js` runs *after* env-reading imports evaluate. `backend/dbpath.js` therefore imports `dotenv/config` itself, and `backup.js` reads env through functions rather than at module scope. Follow this pattern for any new config module.
+- **Env loading**: each entrypoint loads `.env` with `import 'dotenv/config'` as its **first** import (`index.js`, `backup.js`, `restore.js`). ESM evaluates imports in order, so this must precede `./database.js` / `./auth.js`, which read `process.env` at import time. `dbpath.js` is side-effect free and only exposes `resolveDbPath()`; `backup.js` reads env lazily through functions so merely importing it needs no config.
 - **DB schema + migrations** live inline in `initDb()` (`backend/database.js`) — no migration framework. Add columns with `addColumnIfMissing()`, remove with `dropColumnIfPresent()` (drop the index first). Quotes are seeded additively on every boot from `backend/sealFacts.js` by matching text, not by an empty-table check.
 - **Bigram stats are cached 5 min per user** (`getBigramStats`). Any write that adds sessions must call `invalidateBigramCache(userId)` or reads serve stale data.
+- **Testability seams**: `practice.js` and `llmValidation.js` are pure (no DB/network) — `generatePractice({ stats })` receives stats from the caller, and `getLlmPractice` accepts an optional `fetchImpl`. `database.js` still opens SQLite at import, so a test must set `DB_PATH=':memory:'` before importing it. `.env` is loaded by entrypoints via `import 'dotenv/config'` (their first import); `dbpath.js` only exposes `resolveDbPath()` and never reads `.env`, so importing modules in tests cannot pick up the real database path. `entitlements.js` accepts an optional `now` for deterministic quota tests.
 - Config: `ALLOWED_ORIGINS` must include the frontend origin or CORS blocks everything (defaults to `localhost:5173,localhost:3000`). Frontend falls back to `http://localhost:8000` when `VITE_API_URL` is unset.
 
 ## Frontend conventions (non-obvious)

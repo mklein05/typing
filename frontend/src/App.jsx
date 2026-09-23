@@ -7,16 +7,26 @@ import ProtectedRoute from './components/ProtectedRoute';
 import UserMenu from './components/UserMenu';
 import LoginPage from './components/LoginPage';
 import PrivacyPolicy from './components/PrivacyPolicy';
+import TermsOfService from './components/TermsOfService';
 import { apiFetch } from './api';
 
 /** Header with logo, tab navigation, and user menu. */
-function Header({ practiceData, setPracticeData, practiceAvailable, entitlements }) {
+function Header({ onStartPractice, practiceAvailable, entitlements }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const path = location.pathname;
-  const activeTab = path === '/practice' ? 'practice' : 'test';
+  // A tab is selected only on its own route. On /privacy, /terms… none of them
+  // should look active.
+  const activeTab =
+    path === '/practice'
+      ? 'practice'
+      : path === '/'
+        ? 'test'
+        : path === '/dashboard'
+          ? 'dashboard'
+          : null;
 
   // Practice is generated from your own bigram stats, so it can't work
   // without an account — guests get locked out with a sign-in prompt.
@@ -31,16 +41,14 @@ function Header({ practiceData, setPracticeData, practiceAvailable, entitlements
         ? 'Sign in to unlock personalised practice'
         : 'Complete more typing tests to unlock practice',
     },
+    {
+      key: 'dashboard',
+      label: 'Dashboard',
+      to: '/dashboard',
+      locked: !user,
+      lockReason: 'Sign in to view your dashboard',
+    },
   ];
-
-  function goToPractice() {
-    if (practiceData) {
-      navigate('/practice');
-      return;
-    }
-    // Don't fetch here — let the /practice route handle it via useEffect
-    navigate('/practice');
-  }
 
   return (
     // The nav is centred by giving BOTH sides the same flex width, not by
@@ -74,7 +82,7 @@ function Header({ practiceData, setPracticeData, practiceAvailable, entitlements
               key={tab.key}
               onClick={() => {
                 if (isLocked) return;
-                if (tab.key === 'practice') goToPractice();
+                if (tab.key === 'practice') onStartPractice();
                 else navigate(tab.to);
               }}
               disabled={isLocked}
@@ -110,7 +118,7 @@ function Header({ practiceData, setPracticeData, practiceAvailable, entitlements
 }
 
 /** Pages — renders the correct component based on current route. */
-function Pages({ practiceData, setPracticeData, onSessionSaved, entitlements, onEntitlementsChanged }) {
+function Pages({ practiceData, setPracticeData, onSessionSaved, entitlements, onEntitlementsChanged, onStartPractice, practiceAvailable }) {
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -175,15 +183,14 @@ function Pages({ practiceData, setPracticeData, onSessionSaved, entitlements, on
             <ProtectedRoute>
               <Dashboard
                 onBackToTest={() => navigate('/')}
-                onStartPractice={(data) => {
-                  setPracticeData(data);
-                  navigate('/practice');
-                }}
+                onStartPractice={onStartPractice}
+                practiceAvailable={practiceAvailable}
               />
             </ProtectedRoute>
           }
         />
         <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/terms" element={<TermsOfService />} />
       </Routes>
     </div>
   );
@@ -192,6 +199,7 @@ function Pages({ practiceData, setPracticeData, onSessionSaved, entitlements, on
 /** Layout wrapper: header + pages. Public — guests land straight on the test. */
 function AppLayout() {
   const { user, loading } = useAuth();
+  const navigate = useNavigate();
   const [practiceData, setPracticeData] = useState(null);
   const [practiceAvailable, setPracticeAvailable] = useState(false);
   const [entitlements, setEntitlements] = useState(null);
@@ -246,6 +254,15 @@ function AppLayout() {
     refreshPracticeAvailability();
   }, [refreshPracticeData, refreshPracticeAvailability]);
 
+  // Single entry point for practice. Clearing the cached words makes the
+  // /practice route regenerate them, so the header tab and the dashboard button
+  // behave identically instead of one using cached data and the other a fresh
+  // fetch. Both are also gated by the same `practiceAvailable` flag.
+  const startPractice = useCallback(() => {
+    setPracticeData(null);
+    navigate('/practice');
+  }, [navigate]);
+
   // Initial load: gate the first render on the practice words, then check the
   // unlock condition.
   useEffect(() => {
@@ -277,8 +294,7 @@ function AppLayout() {
   return (
     <div className="min-h-screen theme-app flex flex-col">
       <Header
-        practiceData={practiceData}
-        setPracticeData={setPracticeData}
+        onStartPractice={startPractice}
         practiceAvailable={practiceAvailable}
         entitlements={entitlements}
       />
@@ -288,11 +304,16 @@ function AppLayout() {
         onSessionSaved={handleSessionSaved}
         entitlements={entitlements}
         onEntitlementsChanged={refreshEntitlements}
+        onStartPractice={startPractice}
+        practiceAvailable={practiceAvailable}
       />
       {/* Google requires the privacy policy to be linked from the homepage. */}
       <footer className="shrink-0 border-t border-slate-800 px-6 py-2.5 flex items-center justify-between text-xs">
         <span className="theme-text-subtle">typingSeal</span>
         <nav className="flex gap-4">
+          <Link to="/terms" className="theme-text-subtle hover:text-amber-400 transition-colors">
+            Terms
+          </Link>
           <Link to="/privacy" className="theme-text-subtle hover:text-amber-400 transition-colors">
             Privacy
           </Link>

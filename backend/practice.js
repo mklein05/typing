@@ -1,5 +1,3 @@
-import { getBigramStats } from './database.js';
-
 // This list is deliberately duplicated rather than shared: Railway builds each
 // service from its own directory, so a module at the repo root would not be in
 // the backend build context. The frontend keeps its own copy in
@@ -60,7 +58,7 @@ export const WORD_BANK = [
   'work', 'world', 'would', 'write', 'year', 'yes', 'you', 'young', 'your',
 ];
 
-function extractBigrams(word) {
+export function extractBigrams(word) {
   const bigrams = [];
   for (let i = 0; i < word.length - 1; i++) {
     bigrams.push(word[i] + word[i + 1]);
@@ -68,7 +66,7 @@ function extractBigrams(word) {
   return bigrams;
 }
 
-function scoreWord(word, weakBigrams, worstBigram) {
+export function scoreWord(word, weakBigrams, worstBigram) {
   const bigrams = extractBigrams(word);
   let score = 0.0;
   let matches = 0;
@@ -88,7 +86,7 @@ function scoreWord(word, weakBigrams, worstBigram) {
   return score;
 }
 
-function generateDrill(weakBigrams, reps = 5) {
+export function generateDrill(weakBigrams, reps = 5) {
   const parts = [];
   for (const bgInfo of weakBigrams) {
     for (let i = 0; i < reps; i++) {
@@ -108,7 +106,7 @@ for (const word of WORD_BANK) {
 
 // Fisher-Yates. Array.sort(() => 0.5 - Math.random()) is biased and produces
 // an uneven distribution.
-function shuffle(items) {
+export function shuffle(items) {
   const out = [...items];
   for (let i = out.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -121,10 +119,11 @@ function fallbackWords(count) {
   return shuffle(WORD_BANK).slice(0, Math.min(count, WORD_BANK.length));
 }
 
-export function generatePractice(count = 10, wordCount = 35, userId = null) {
-  const bigramStats = getBigramStats(userId);
-  const allBigrams = bigramStats.bigrams || [];
-  const totalSessions = bigramStats.total_sessions || 0;
+// Pure: the caller fetches the user's bigram stats and passes them in, so this
+// module has no database dependency and can be tested with a plain object.
+export function generatePractice({ stats, count = 10, wordCount = 35 }) {
+  const allBigrams = stats?.bigrams || [];
+  const totalSessions = stats?.total_sessions || 0;
 
   if (totalSessions === 0) {
     return {

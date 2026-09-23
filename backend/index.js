@@ -1,7 +1,10 @@
+// Must be the first import: ESM evaluates imports in order, so loading .env here
+// guarantees it is loaded before ./database.js and ./auth.js read process.env.
+import 'dotenv/config';
+
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
-import dotenv from 'dotenv';
 import morgan from 'morgan';
 
 import {
@@ -19,8 +22,6 @@ import { generatePractice } from './practice.js';
 import { getEntitlements, peekQuota, consumeQuota } from './entitlements.js';
 import { getLlmPractice } from './llmPractice.js';
 import { runBackup, startBackupSchedule } from './backup.js';
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -96,7 +97,8 @@ app.get('/api/stats/bigrams', requireAuth, (req, res) => {
 app.get('/api/practice/generate', requireAuth, (req, res) => {
   const count = parseInt(req.query.count, 10) || 10;
   const wordCount = parseInt(req.query.word_count, 10) || 35;
-  res.json(generatePractice(count, wordCount, req.userId));
+  const stats = getBigramStats(req.userId);
+  res.json(generatePractice({ stats, count, wordCount }));
 });
 
 app.post('/api/users/me', requireAuth, (req, res) => {
@@ -165,7 +167,7 @@ app.post('/api/practice/generate-llm', requireAuth, async (req, res) => {
   try {
     // Reuse the deterministic generator's target selection so both engines
     // agree on what counts as a weak bigram.
-    const base = generatePractice(count, wordCount, userId);
+    const base = generatePractice({ stats: getBigramStats(userId), count, wordCount });
 
     if (base.error) {
       return res.status(400).json(base);

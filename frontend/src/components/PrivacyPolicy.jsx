@@ -1,224 +1,182 @@
-import { useNavigate } from 'react-router-dom';
+import LegalPage, { Section } from './LegalPage';
 
 /**
- * Privacy policy.
+ * Privacy policy — plain-language version.
  *
  * ============================ BEFORE PUBLISHING ============================
- * Replace every [BRACKETED PLACEHOLDER]. It is deliberately in caps so an
- * unreplaced one is obvious in the rendered page.
+ * Replace every [CONTACT EMAIL] with a monitored address (e.g.
+ * contact@typingseal.com). It is in caps on purpose so an unreplaced one is
+ * obvious on the rendered page.
  *
- *   [CONTACT EMAIL]    a monitored address, e.g. contact@typingseal.com
+ * No registered company name is required: a project name plus a working contact
+ * satisfies GDPR's requirement that the controller be identifiable, which is the
+ * approach MonkeyType takes. Add a legal name only if you incorporate, or if a
+ * payment provider asks for one.
  *
- * That is the only one. A legal name is deliberately NOT required: GDPR requires
- * the controller to be identifiable and contactable, which the project name plus
- * a working address satisfies. MonkeyType does exactly this. Add a registered
- * name only if you incorporate, or if your payment provider asks for it.
+ * When payments go live, add one short section naming the payment provider and
+ * what it collects. Nothing about billing is stated below because nothing about
+ * billing exists yet.
  *
- * When you start taking payments, this needs a new section naming the payment
- * provider and what they collect. Nothing about billing is stated below because
- * nothing about billing exists yet.
+ * This is a template, not legal advice. Have it reviewed before you rely on it.
  * ==========================================================================
  */
-
-function Section({ title, children }) {
-  return (
-    <section className="mt-8">
-      <h2 className="font-pixel theme-text text-lg font-bold mb-3">{title}</h2>
-      <div className="theme-text-soft text-sm leading-relaxed space-y-3">{children}</div>
-    </section>
-  );
-}
-
 export default function PrivacyPolicy() {
-  const navigate = useNavigate();
-
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="max-w-3xl mx-auto px-6 py-10">
-        <h1 className="font-pixel theme-text text-3xl font-bold">Privacy Policy</h1>
-        <p className="theme-text-muted text-sm mt-2">Last updated 16 September 2026</p>
+    <LegalPage title="Privacy Policy" updated="23 September 2026">
+      <Section title="In short">
+        <ul className="list-disc pl-5 space-y-1">
+          <li>We store your email and a username so you can sign in and save results.</li>
+          <li>We store your test results and your keystrokes so we can show your stats and build practice.</li>
+          <li>We don&rsquo;t sell your data, run ads, or track you across other sites.</li>
+          <li>Ask us and we&rsquo;ll delete your data.</li>
+        </ul>
+      </Section>
 
-        <Section title="Who we are">
-          <p>
-            typingSeal is a typing practice website available at typingseal.com
-            (&ldquo;typingSeal&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;). This policy explains what we
-            collect when you use typingSeal, why we collect it, and what control you have over it.
-            We are the data controller responsible for that information, and our contact details
-            appear below.
-          </p>
-          <p>
-            For any privacy question or request, contact{' '}
-            <span className="theme-text">[CONTACT EMAIL]</span>.
-          </p>
-        </Section>
+      <Section title="Who we are">
+        <p>
+          typingSeal (typingseal.com) — &ldquo;we&rdquo;, &ldquo;us&rdquo;. For any privacy
+          question or request, email <span className="theme-text">ironpin11@gmail.com</span>.
+        </p>
+      </Section>
 
-        <Section title="What we collect">
-          <p className="theme-text font-bold">Account information</p>
-          <p>
-            When you sign in with Google we receive your email address, your name, and your
-            profile picture URL. We never receive your Google password. You also choose a display
-            username, which is stored with your account.
-          </p>
+      <Section title="What we store">
+        <p className="theme-text font-bold">Your account</p>
+        <p>
+          When you sign in with Google we receive your email address, and Google may also pass
+          along your name and profile picture. We store your email and the display username you
+          choose. We never see your Google password.
+        </p>
 
-          <p className="theme-text font-bold">Typing data</p>
-          <p>
-            When you complete a test we store the result — words per minute, accuracy, duration,
-            and the words you were shown. We also store your keystrokes individually: which key
-            you pressed, which key was expected, whether it was correct, and the timing of each
-            press and release in milliseconds. This per-keystroke detail is what lets us show you
-            which letter combinations you struggle with, and it is the most detailed category of
-            data we hold.
-          </p>
+        <p className="theme-text font-bold">Your results</p>
+        <p>
+          Each completed test saves your words per minute, accuracy, duration, and the words you
+          were shown.
+        </p>
 
-          <p className="theme-text font-bold">Usage data</p>
-          <p>
-            We record how many times you use certain metered features, so that plan limits can be
-            applied.
-          </p>
+        <p className="theme-text font-bold">Your keystrokes</p>
+        <p>
+          We also save each keystroke: the key you pressed, the key expected, whether it matched,
+          and how long you held it. This is the most detailed data we keep — it is what powers the
+          per-letter and per-pair statistics, and it is why the dashboard can point at the exact
+          letters that slow you down. It is never sold or shared beyond the providers listed below.
+        </p>
 
-          <p className="theme-text font-bold">Connection data</p>
-          <p>
-            Our hosting and content delivery providers process technical information such as your
-            IP address and browser type in the course of serving the site securely. We do not use
-            this to build advertising profiles.
-          </p>
+        <p className="theme-text font-bold">Usage counts</p>
+        <p>
+          We count how often you use metered features (such as AI passages) so that plan limits
+          work.
+        </p>
 
-          <p>
-            We do not collect payment or financial information.
-          </p>
-        </Section>
+        <p className="theme-text font-bold">Basic technical data</p>
+        <p>
+          Like most websites, our servers record routine information such as your IP address and
+          browser type when you make a request. This is used to keep the site secure and to
+          diagnose faults — not to build advertising profiles.
+        </p>
+      </Section>
 
-        <Section title="How we use it">
-          <ul className="list-disc pl-5 space-y-1">
-            <li>To provide the service — storing your results, building your dashboard statistics, and generating personalised practice</li>
-            <li>To keep you signed in</li>
-            <li>To keep the service working and secure, including diagnosing faults, preventing abuse, and maintaining backups</li>
-            <li>To apply the limits of your plan</li>
-          </ul>
-          <p>
-            We do not use your data for advertising, and we do not sell it.
-          </p>
-          <p>
-            Where the GDPR applies, we rely on these legal bases: performance of a contract (to
-            provide the service you asked for), legitimate interests (to keep the service secure
-            and functioning), and consent where we specifically ask for it.
-          </p>
-        </Section>
+      <Section title="Cookies and local storage">
+        <p>
+          We set no advertising or analytics cookies, and there is no third-party tracking. When
+          you sign in, a session token is kept in your browser&rsquo;s local storage so you stay
+          signed in between visits. Clearing your browser storage signs you out.
+        </p>
+      </Section>
 
-        <Section title="Cookies and local storage">
-          <p>
-            We do not use advertising or analytics cookies, and there is no third-party tracking
-            on this site. When you sign in, our authentication provider stores a session token in
-            your browser&rsquo;s local storage so that you stay signed in between page loads.
-            Clearing your browser storage will sign you out.
-          </p>
-        </Section>
+      <Section title="Signing in with Google">
+        <p>
+          Choosing &ldquo;Sign in with Google&rdquo; passes us the profile information described
+          above, and we use it only to create and authenticate your account. Our use of
+          information received from Google APIs adheres to the{' '}
+          <a
+            href="https://developers.google.com/terms/api-services-user-data-policy"
+            target="_blank"
+            rel="noreferrer"
+            className="text-slate-400 hover:text-amber-400 transition-colors underline underline-offset-2"
+          >
+            Google API Services User Data Policy
+          </a>
+          , including the Limited Use requirements.
+        </p>
+      </Section>
 
-        <Section title="Google user data">
-          <p>
-            If you choose &ldquo;Sign in with Google&rdquo;, we receive the profile information
-            described above and use it solely to create and authenticate your account. Our use and
-            transfer to any other app of information received from Google APIs will adhere to the{' '}
-            <a
-              href="https://developers.google.com/terms/api-services-user-data-policy"
-              target="_blank"
-              rel="noreferrer"
-              className="text-slate-400 hover:text-amber-400 transition-colors underline underline-offset-2"
-            >
-              Google API Services User Data Policy
-            </a>
-            , including the Limited Use requirements.
-          </p>
-        </Section>
+      <Section title="AI practice (optional)">
+        <p>
+          AI practice only runs when you press the button. To generate a passage, we send the
+          letter pairs it should focus on and the requested length to OpenRouter. No account
+          details and no keystroke history are sent.
+        </p>
+      </Section>
 
-        <Section title="Who we share it with">
-          <p>
-            We do not sell your personal information. We share it only with the service providers
-            that help us run typingSeal, and only as far as needed:
-          </p>
-          <ul className="list-disc pl-5 space-y-1">
-            <li><span className="theme-text">Supabase</span> — authentication, and secure storage of database backups</li>
-            <li><span className="theme-text">Railway</span> — application hosting and database storage</li>
-            <li><span className="theme-text">Cloudflare</span> — content delivery and network protection</li>
-            <li><span className="theme-text">Google</span> — sign-in</li>
-          </ul>
-          <p>
-            We may also disclose information if we are legally required to do so.
-          </p>
-        </Section>
+      <Section title="Who we share it with">
+        <p>
+          We never sell your data. We share it only with the providers that run the site, and only
+          as far as needed:
+        </p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li><span className="theme-text">Supabase</span> — sign-in, and private storage of database backups</li>
+          <li><span className="theme-text">Railway</span> — hosting and database storage</li>
+          <li><span className="theme-text">Cloudflare</span> — content delivery and network protection</li>
+          <li><span className="theme-text">Google</span> — sign-in</li>
+          <li><span className="theme-text">OpenRouter</span> — generating AI practice passages (see above)</li>
+        </ul>
+        <p>We may also disclose data where the law requires it.</p>
+      </Section>
 
-        <Section title="How long we keep it">
-          <p>
-            Your account and typing data are kept for as long as your account exists. When your
-            account is deleted, they are deleted.
-          </p>
-          <p>
-            We also take a daily backup of the database and keep the most recent 14 days. Backups
-            are held in private, access-controlled storage and are removed automatically once they
-            age out.
-          </p>
-        </Section>
+      <Section title="How long we keep it">
+        <p>
+          Your account and typing data stay for as long as your account exists, and are deleted
+          when you ask us to delete them. We also take a daily database backup and keep the most
+          recent 14 days; older backups are removed automatically.
+        </p>
+      </Section>
 
-        <Section title="Security">
-          <p>
-            Data is transmitted over HTTPS. The database and its backups are reachable only from
-            our own servers, and backup storage is not publicly accessible. No system is perfectly
-            secure, and we cannot guarantee absolute security — but we do not hold payment details,
-            which limits what could be exposed.
-          </p>
-        </Section>
+      <Section title="Deleting your data and your rights">
+        <p>
+          To access, correct, export, or delete your data, email{' '}
+          <span className="theme-text">ironpin11@gmail.com</span> and we will act within the time the
+          law requires. Depending on where you live you may also have the right to object to or
+          restrict certain processing. If you are in the EU or UK, you can complain to your local
+          data protection authority.
+        </p>
+      </Section>
 
-        <Section title="Your rights">
-          <p>
-            Depending on where you live, you may have the right to access, correct, export, or
-            delete your personal information, and to object to or restrict certain processing. To
-            exercise any of these, email{' '}
-            <span className="theme-text">[CONTACT EMAIL]</span> and we will respond within the
-            timeframe the law requires.
-          </p>
-          <p>
-            If you are in the EU or UK, you also have the right to lodge a complaint with your
-            local data protection authority.
-          </p>
-        </Section>
+      <Section title="Security">
+        <p>
+          Traffic is encrypted with HTTPS, and your data and its backups are reachable only from
+          our own servers. No system is perfectly secure, but we hold no payment details, which
+          limits what could be exposed.
+        </p>
+      </Section>
 
-        <Section title="Children">
-          <p>
-            typingSeal is not intended for children under 13, and we do not knowingly collect their
-            personal information. If you believe a child has given us personal information, contact
-            us and we will delete it.
-          </p>
-        </Section>
+      <Section title="Children">
+        <p>
+          typingSeal is not intended for children under 13, and we do not knowingly collect their
+          personal information. If you believe a child has given us data, contact us and we will
+          delete it.
+        </p>
+      </Section>
 
-        <Section title="Where your data is processed">
-          <p>
-            Our servers and those of our service providers are located in the United States and
-            possibly other countries. If you use typingSeal from elsewhere, your information will
-            be transferred to and processed in those locations.
-          </p>
-        </Section>
+      <Section title="Where your data is processed">
+        <p>
+          Our providers are located mainly in the United States, so your information may be
+          transferred to and processed there.
+        </p>
+      </Section>
 
-        <Section title="Changes to this policy">
-          <p>
-            If we make a material change to how we handle your information, we will update the date
-            at the top of this page and, where appropriate, tell you in the app or by email.
-          </p>
-        </Section>
+      <Section title="Changes to this policy">
+        <p>
+          If we make a material change to how we handle your information, we will update the date
+          at the top of this page and, where it matters, tell you in the app.
+        </p>
+      </Section>
 
-        <Section title="Contact">
-          <p>
-            Questions, requests, or complaints:{' '}
-            <span className="theme-text">[CONTACT EMAIL]</span>.
-          </p>
-        </Section>
-
-        <button
-          onClick={() => navigate('/')}
-          className="mt-10 font-pixel px-4 py-2 border border-slate-700 theme-text-soft text-sm font-bold transition-colors hover:border-amber-500/60 hover:bg-slate-800"
-        >
-          ← Back to typingSeal
-        </button>
-      </div>
-    </div>
+      <Section title="Contact">
+        <p>
+          Questions, requests, or complaints:{' '}
+          <span className="theme-text">ironpin11@gmail.com</span>.
+        </p>
+      </Section>
+    </LegalPage>
   );
 }

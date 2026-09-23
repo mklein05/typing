@@ -13,7 +13,7 @@ const BIGRAMS_API = '/api/stats/bigrams';
  * Dashboard — fetches per-key and bigram stats from the backend and renders
  * summary cards, bar charts of worst keys/bigrams, and sortable tables.
  */
-export default function Dashboard({ onBackToTest, onStartPractice }) {
+export default function Dashboard({ onBackToTest, onStartPractice, practiceAvailable }) {
   const [data, setData] = useState(null);              // key stats API response
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -21,9 +21,6 @@ export default function Dashboard({ onBackToTest, onStartPractice }) {
   const [bigramData, setBigramData] = useState(null);  // bigram API response
   const [bigramLoading, setBigramLoading] = useState(true);
   const [bigramError, setBigramError] = useState(null);
-
-  const [practiceLoading, setPracticeLoading] = useState(false);
-  const [practiceError, setPracticeError] = useState(null);
 
   const [keysExpanded, setKeysExpanded] = useState(false);
   const [bigramsExpanded, setBigramsExpanded] = useState(false);
@@ -64,30 +61,6 @@ export default function Dashboard({ onBackToTest, onStartPractice }) {
   useEffect(() => {
     fetchStats();
   }, []);
-
-  /** Fetch practice test from backend and switch to practice mode. */
-  function handlePractice() {
-    setPracticeLoading(true);
-    setPracticeError(null);
-
-    apiFetch('/api/practice/generate?count=10&word_count=35')
-      .then((res) => {
-        if (!res.ok) throw new Error(`Server responded with ${res.status}`);
-        return res.json();
-      })
-      .then((json) => {
-        setPracticeLoading(false);
-        if (json.error) {
-          setPracticeError(json.error);
-        } else {
-          onStartPractice(json);
-        }
-      })
-      .catch((err) => {
-        setPracticeLoading(false);
-        setPracticeError(err.message);
-      });
-  }
 
   // ─── Loading state ──────────────────────────────────────────────
   if (loading) {
@@ -152,25 +125,20 @@ export default function Dashboard({ onBackToTest, onStartPractice }) {
       <div className="max-w-5xl mx-auto">
         {/* Practice button */}
         <div className="mb-8">
+          {/* Same entry point and same unlock rule as the header's Practice tab,
+              so the two can never diverge. */}
           <button
-            onClick={handlePractice}
-            disabled={practiceLoading || total_sessions === 0}
-            title={total_sessions === 0 ? 'Complete at least one test first.' : undefined}
+            onClick={onStartPractice}
+            disabled={!practiceAvailable}
+            title={!practiceAvailable ? 'Complete more typing tests to unlock practice' : undefined}
             className={`px-6 py-3 font-bold rounded-lg transition-colors text-slate-900 ${
-              total_sessions === 0
-                ? 'theme-panel-muted theme-text-subtle cursor-not-allowed'
-                : practiceLoading
-                  ? 'theme-success cursor-wait'
-                  : 'theme-success'
+              practiceAvailable
+                ? 'theme-success'
+                : 'theme-panel-muted theme-text-subtle cursor-not-allowed'
             }`}
           >
-            {practiceLoading ? 'Generating...' : 'Practice My Weaknesses'}
+            Practice My Weaknesses
           </button>
-          {practiceError && (
-            <p className="theme-danger text-sm mt-2 font-mono">
-              {practiceError}
-            </p>
-          )}
         </div>
 
         {/* Summary cards */}

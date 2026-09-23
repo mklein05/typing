@@ -59,14 +59,19 @@ export default function LoginPage() {
         Continue as guest →
       </button>
 
-      {/* Sending someone to Google's consent screen from here makes a visible
-          privacy link especially important. */}
-      <Link
-        to="/privacy"
-        className="mt-8 text-xs theme-text-subtle hover:text-amber-400 transition-colors"
-      >
-        Privacy policy
-      </Link>
+      {/* Sending someone to Google's consent screen from here makes visible
+          terms and privacy links especially important. */}
+      <p className="mt-8 text-xs theme-text-subtle text-center max-w-xs">
+        By signing in you agree to our{' '}
+        <Link to="/terms" className="hover:text-amber-400 transition-colors underline underline-offset-2">
+          Terms of Service
+        </Link>{' '}
+        and{' '}
+        <Link to="/privacy" className="hover:text-amber-400 transition-colors underline underline-offset-2">
+          Privacy Policy
+        </Link>
+        .
+      </p>
     </div>
   );
 }
