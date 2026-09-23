@@ -4,6 +4,16 @@ import fs from 'fs';
 
 import { resolveDbPath } from './dbpath.js';
 import { SEAL_FACTS } from './sealFacts.js';
+import {
+  XP_PER_CORRECT,
+  PRACTICE_MULTIPLIER,
+  MAX_LEVEL,
+  applyXp,
+  levelFromXp,
+  xpIntoLevel,
+  xpForNextLevel,
+  canPrestige,
+} from './leveling.js';
 
 const DB_PATH = resolveDbPath();
 
@@ -115,6 +125,16 @@ export function initDb() {
   addColumnIfMissing('users', 'plan', "TEXT NOT NULL DEFAULT 'free'");
   addColumnIfMissing('users', 'premium_until', 'TEXT');
 
+  // Experience and prestige. Level is derived from xp, never stored, so the
+  // curve has one source of truth (backend/leveling.js).
+  addColumnIfMissing('users', 'xp', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('users', 'prestige', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('users', 'lifetime_xp', 'INTEGER NOT NULL DEFAULT 0');
+
+  // Whether a session was practice (2x XP) and what it actually awarded.
+  addColumnIfMissing('sessions', 'mode', "TEXT NOT NULL DEFAULT 'normal'");
+  addColumnIfMissing('sessions', 'xp_earned', 'INTEGER');
+
   // Must come after the DROP INDEX above: SQLite refuses to drop a column that
   // an index still references.
   dropColumnIfPresent('quotes', 'difficulty');
@@ -158,12 +178,17 @@ export function ensureUser(userId, email = null) {
   ).run(userId, email);
 }
 
+/** Correctly typed characters, excluding space and Backspace. */
+export function countCorrectCharacters(keystrokes = []) {
+  return keystrokes.filter((k) => k.correct && k.key !== ' ' && k.key !== 'Backspace').length;
+}
+
 export function createSession(data, userId = null) {
   const insertSession = db.prepare(`
     INSERT INTO sessions 
       (user_id, started_at, wpm, accuracy, word_accuracy, duration_seconds,
-       total_keystrokes, total_words, correct_words, word_list)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       total_keystrokes, total_words, correct_words, word_list, mode, xp_earned)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertKeystroke = db.prepare(`
@@ -173,8 +198,26 @@ export function createSession(data, userId = null) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  // Transaction ensures both inserts succeed or fail together
+  const selectProgress = db.prepare('SELECT xp, lifetime_xp FROM users WHERE id = ?');
+  const updateProgress = db.prepare('UPDATE users SET xp = ?, lifetime_xp = ? WHERE id = ?');
+
+  // Transaction ensures the session, its keystrokes and the XP award all
+  // succeed or fail together — XP can never be credited without its session.
   const transaction = db.transaction((data, userId) => {
+    const keystrokes = data.keystrokes || [];
+    const mode = data.mode === 'practice' ? 'practice' : 'normal';
+    const multiplier = mode === 'practice' ? PRACTICE_MULTIPLIER : 1;
+    const xpEarned = userId
+      ? countCorrectCharacters(keystrokes) * XP_PER_CORRECT * multiplier
+      : 0;
+
+    let progress = null;
+    if (userId) {
+      const row = selectProgress.get(userId) ?? { xp: 0, lifetime_xp: 0 };
+      progress = applyXp({ xp: row.xp, lifetimeXp: row.lifetime_xp }, xpEarned);
+      updateProgress.run(progress.xp, progress.lifetimeXp, userId);
+    }
+
     const wordListJson = JSON.stringify(data.word_list);
     const sessionResult = insertSession.run(
       userId,
@@ -186,12 +229,14 @@ export function createSession(data, userId = null) {
       data.total_keystrokes,
       data.total_words,
       data.correct_words,
-      wordListJson
+      wordListJson,
+      mode,
+      userId ? xpEarned : null
     );
 
     const sessionId = sessionResult.lastInsertRowid;
 
-    for (const k of data.keystrokes) {
+    for (const k of keystrokes) {
       insertKeystroke.run(
         sessionId,
         k.sequence,
@@ -206,10 +251,50 @@ export function createSession(data, userId = null) {
       );
     }
 
-    return sessionId;
+    return {
+      sessionId,
+      xpEarned,
+      level: progress?.level ?? null,
+      leveledUp: progress?.leveledUp ?? false,
+    };
   });
 
   return transaction(data, userId);
+}
+
+/** Derived level/prestige state for a user, ready to send to the client. */
+export function getProfile(userId) {
+  const row = db
+    .prepare('SELECT username, xp, prestige, lifetime_xp FROM users WHERE id = ?')
+    .get(userId);
+
+  const xp = row?.xp ?? 0;
+  const level = levelFromXp(xp);
+
+  return {
+    username: row?.username ?? null,
+    level,
+    prestige: row?.prestige ?? 0,
+    xp,
+    xp_into_level: xpIntoLevel(xp),
+    xp_for_next_level: xpForNextLevel(level),
+    lifetime_xp: row?.lifetime_xp ?? 0,
+    can_prestige: canPrestige(xp),
+    max_level: MAX_LEVEL,
+  };
+}
+
+/**
+ * Reset to level 1 and bump prestige. Only valid at MAX_LEVEL; returns null
+ * otherwise so the route can reject it. XP earned at the cap is discarded.
+ */
+export function prestigeUser(userId) {
+  const row = db.prepare('SELECT xp, prestige FROM users WHERE id = ?').get(userId);
+  if (!row || !canPrestige(row.xp)) return null;
+
+  const prestige = (row.prestige ?? 0) + 1;
+  db.prepare('UPDATE users SET xp = 0, prestige = ? WHERE id = ?').run(prestige, userId);
+  return { prestige };
 }
 
 export function getAllSessions(userId = null) {

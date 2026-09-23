@@ -189,6 +189,7 @@ export default function TypingTest({
     setResultData(null);
     setCachedStats(null);
     setPostStatus('idle');
+    setXpResult(null);
     setPracticeMode('words');
     setAiWords(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -205,6 +206,7 @@ export default function TypingTest({
   const [resultData, setResultData] = useState(null);
   const [postStatus, setPostStatus] = useState('idle');     // 'idle' | 'posting' | 'error' | 'done'
   const [cachedStats, setCachedStats] = useState(null);     // snapshot stats on finish
+  const [xpResult, setXpResult] = useState(null);           // XP awarded by the last saved session
   const [wpmPulseKey, setWpmPulseKey] = useState(0);       // increments on WPM change to trigger pulse animation
 
   // ─── Computed ─────────────────────────────────────────────────────
@@ -361,6 +363,9 @@ export default function TypingTest({
       correct_words: correctWords,
       word_list: words,
       keystrokes,
+      // The server multiplies by 2 for practice; sending the mode is what makes
+      // the bonus apply and is what the session row records.
+      mode: isPractice ? 'practice' : 'normal',
     };
 
     apiFetch('/api/sessions', {
@@ -369,15 +374,19 @@ export default function TypingTest({
     })
       .then(res => {
         if (!res.ok) throw new Error('Server error');
+        return res.json().catch(() => null);
+      })
+      .then(json => {
         setPostStatus('done');
+        if (json && typeof json.xp_earned === 'number') setXpResult(json);
         // A saved session changes bigram stats — let the layout re-check
-        // whether practice should now be unlocked.
+        // whether practice should now be unlocked, and refresh the level badge.
         onSessionSaved?.();
       })
       .catch(() => {
         setPostStatus('error');
       });
-  }, [words, user, onSessionSaved]);
+  }, [words, user, onSessionSaved, isPractice]);
 
   // ─── Advance to next word ─────────────────────────────────────────
   // Called when user presses Space on a non-empty input
@@ -664,6 +673,7 @@ export default function TypingTest({
     setResultData(null);
     setCachedStats(null);
     setPostStatus('idle');
+    setXpResult(null);
     setSealFrame(0);
     // Hand focus back to the test so typing resumes immediately — if restart
     // was triggered from the keyboard, the button still holds focus.
@@ -693,6 +703,7 @@ export default function TypingTest({
     setResultData(null);
     setCachedStats(null);
     setPostStatus('idle');
+    setXpResult(null);
     if (newMode === 'quotes') {
       fetchQuotes();
     } else {
@@ -722,6 +733,7 @@ export default function TypingTest({
     setResultData(null);
     setCachedStats(null);
     setPostStatus('idle');
+    setXpResult(null);
   }, []);
 
   // Switching tabs only chooses a mode — it never spends quota. Generation is a
@@ -1160,6 +1172,20 @@ export default function TypingTest({
           <div>{stats.correctWords} / {stats.totalWords}</div>
         </div>
 
+        {/* XP awarded by the server for this session */}
+        {postStatus === 'done' && xpResult && (
+          <div className="flex flex-col items-center gap-1">
+            <div className="theme-accent-text text-2xl font-bold tabular-nums">
+              +{xpResult.xp_earned} XP
+            </div>
+            {xpResult.leveled_up && (
+              <div className="text-green-400 text-sm font-bold">
+                Level up! → {xpResult.level}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* POST status */}
         {postStatus === 'posting' && (
           <div className="theme-text-subtle text-sm">Saving results...</div>
@@ -1172,7 +1198,7 @@ export default function TypingTest({
             onClick={() => navigate('/login')}
             className="theme-text-muted hover:theme-text text-sm transition-colors"
           >
-            Sign in to save your results →
+            Sign in to save your results and earn XP →
           </button>
         )}
 

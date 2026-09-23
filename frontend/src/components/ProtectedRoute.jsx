@@ -11,17 +11,21 @@ function Spinner() {
 }
 
 /**
- * Guards routes that need a real account — currently just /dashboard.
+ * Guards routes that need a real account — /dashboard and /practice.
  *
- * Guests are redirected to /login. Signed-in users who haven't picked a
- * username yet are asked for one, since the dashboard displays it.
+ * Guests are redirected to /login, which is also what happens if they sign out
+ * while on the page. Signed-in users who haven't picked a username yet are
+ * asked for one, since the dashboard displays it; pass `requireUsername={false}`
+ * for routes that don't need it (practice).
  */
-export default function ProtectedRoute({ children }) {
+export default function ProtectedRoute({ children, requireUsername = true }) {
   const { user, loading, username, usernameLoading, refreshUsername } = useAuth();
 
   if (loading) return <Spinner />;
 
   if (!user) return <Navigate to="/login" replace />;
+
+  if (!requireUsername) return children;
 
   if (usernameLoading) return <Spinner />;
 

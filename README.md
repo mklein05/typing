@@ -167,6 +167,32 @@ The daily counter uses UTC, so allowances roll over at midnight UTC rather than 
 local midnight. Premium usage is counted too — it is the only way to see what the feature
 actually costs.
 
+## Experience and levels
+
+Every correct character in a saved test earns 1 XP, doubled in practice mode (drills and
+AI passages included). XP is counted **server-side** from the stored keystrokes — the client
+never sends an XP value.
+
+- **Levels 1–100.** The XP needed to advance grows each level:
+  `totalXpToReach(level) = 10 * (level - 1)^2`, so level 100 is ~98,000 XP.
+- **Level is derived, never stored.** `backend/leveling.js` is the only place the curve
+  lives; the server computes the level from `users.xp` on read, so there is one source of
+  truth and no drift.
+- **Prestige is manual.** At level 100 the profile menu and dashboard offer a Prestige
+  button. It resets XP to 0 and level to 1, increments `users.prestige`, and the prestige is
+  shown in Roman numerals. XP earned while sitting at 100 is discarded.
+- **Guests earn nothing** — their sessions are never saved, so there is no XP to award.
+
+| Piece | Where |
+| --- | --- |
+| The XP curve | `backend/leveling.js` (`CURVE_A`, `MAX_LEVEL`) |
+| `users.xp`, `users.prestige`, `users.lifetime_xp` | Guarded migration in `initDb()` |
+| `sessions.mode`, `sessions.xp_earned` | Records practice (2×) and what each session awarded |
+| XP award | `createSession()` — same transaction as the session insert |
+| Level + progress | `GET /api/profile` |
+| Prestige | `POST /api/prestige` (rejected below level 100) |
+| Display | Header profile menu, results screen, dashboard XP bar |
+
 ## LLM-generated practice
 
 `backend/llmPractice.js` generates a short passage of natural text engineered to be dense in

@@ -11,7 +11,7 @@ import TermsOfService from './components/TermsOfService';
 import { apiFetch } from './api';
 
 /** Header with logo, tab navigation, and user menu. */
-function Header({ onStartPractice, practiceAvailable, entitlements }) {
+function Header({ onStartPractice, practiceAvailable, entitlements, profile, onPrestige }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -103,7 +103,7 @@ function Header({ onStartPractice, practiceAvailable, entitlements }) {
 
       <div className="flex-1 min-w-0 flex items-center justify-end">
         {user ? (
-          <UserMenu entitlements={entitlements} />
+          <UserMenu entitlements={entitlements} profile={profile} onPrestige={onPrestige} />
         ) : (
           <button
             onClick={() => navigate('/login')}
@@ -118,7 +118,7 @@ function Header({ onStartPractice, practiceAvailable, entitlements }) {
 }
 
 /** Pages — renders the correct component based on current route. */
-function Pages({ practiceData, setPracticeData, onSessionSaved, entitlements, onEntitlementsChanged, onStartPractice, practiceAvailable }) {
+function Pages({ practiceData, setPracticeData, onSessionSaved, entitlements, onEntitlementsChanged, onStartPractice, practiceAvailable, profile, onPrestige }) {
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -156,25 +156,27 @@ function Pages({ practiceData, setPracticeData, onSessionSaved, entitlements, on
         <Route
           path="/practice"
           element={
-            practiceData ? (
-              <TypingTest
-                mode="practice"
-                practiceWords={practiceData.practice_words}
-                drillText={practiceData.drill_text}
-                targetedBigrams={practiceData.targeted_bigrams}
-                onViewDashboard={() => navigate('/dashboard')}
-                onBackToDashboard={() => navigate('/dashboard')}
-                onSessionSaved={onSessionSaved}
-                entitlements={entitlements}
-                onEntitlementsChanged={onEntitlementsChanged}
-              />
-            ) : (
-              <div className="flex-1 flex items-center justify-center">
-                <p className="theme-text-muted font-mono">
-                  Loading practice...
-                </p>
-              </div>
-            )
+            <ProtectedRoute requireUsername={false}>
+              {practiceData ? (
+                <TypingTest
+                  mode="practice"
+                  practiceWords={practiceData.practice_words}
+                  drillText={practiceData.drill_text}
+                  targetedBigrams={practiceData.targeted_bigrams}
+                  onViewDashboard={() => navigate('/dashboard')}
+                  onBackToDashboard={() => navigate('/dashboard')}
+                  onSessionSaved={onSessionSaved}
+                  entitlements={entitlements}
+                  onEntitlementsChanged={onEntitlementsChanged}
+                />
+              ) : (
+                <div className="flex-1 flex items-center justify-center">
+                  <p className="theme-text-muted font-mono">
+                    Loading practice...
+                  </p>
+                </div>
+              )}
+            </ProtectedRoute>
           }
         />
         <Route
@@ -185,6 +187,8 @@ function Pages({ practiceData, setPracticeData, onSessionSaved, entitlements, on
                 onBackToTest={() => navigate('/')}
                 onStartPractice={onStartPractice}
                 practiceAvailable={practiceAvailable}
+                profile={profile}
+                onPrestige={onPrestige}
               />
             </ProtectedRoute>
           }
@@ -203,6 +207,7 @@ function AppLayout() {
   const [practiceData, setPracticeData] = useState(null);
   const [practiceAvailable, setPracticeAvailable] = useState(false);
   const [entitlements, setEntitlements] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [appReady, setAppReady] = useState(false);
 
   // Both practice values are derived from the signed-in user's own stats, so
@@ -245,6 +250,32 @@ function AppLayout() {
       .catch(() => {});
   }, [user]);
 
+  // Level, XP and prestige. Level is derived server-side, so the client only
+  // displays what it is given.
+  const refreshProfile = useCallback(() => {
+    if (!user) {
+      setProfile(null);
+      return Promise.resolve();
+    }
+    return apiFetch('/api/profile')
+      .then((res) => res.json())
+      .then((json) => {
+        if (!json.error) setProfile(json);
+      })
+      .catch(() => {});
+  }, [user]);
+
+  // Manual prestige. The server rejects this unless level 100 was reached.
+  const prestige = useCallback(() => {
+    return apiFetch('/api/prestige', { method: 'POST' })
+      .then((res) => res.json())
+      .then((json) => {
+        if (!json.error) setProfile(json);
+        return json;
+      })
+      .catch(() => {});
+  }, []);
+
   // A saved test changes the user's bigram stats, so regenerate the practice
   // words against the new weaknesses *and* re-check the unlock condition.
   // (`getBigramStats` is cached server-side but invalidated on session save,
@@ -252,7 +283,8 @@ function AppLayout() {
   const handleSessionSaved = useCallback(() => {
     refreshPracticeData();
     refreshPracticeAvailability();
-  }, [refreshPracticeData, refreshPracticeAvailability]);
+    refreshProfile();
+  }, [refreshPracticeData, refreshPracticeAvailability, refreshProfile]);
 
   // Single entry point for practice. Clearing the cached words makes the
   // /practice route regenerate them, so the header tab and the dashboard button
@@ -272,6 +304,7 @@ function AppLayout() {
       setPracticeData(null);
       setPracticeAvailable(false);
       setEntitlements(null);
+      setProfile(null);
       setAppReady(true);
       return;
     }
@@ -280,8 +313,9 @@ function AppLayout() {
       setAppReady(true);
       refreshPracticeAvailability();
       refreshEntitlements();
+      refreshProfile();
     });
-  }, [loading, user, refreshPracticeData, refreshPracticeAvailability, refreshEntitlements]);
+  }, [loading, user, refreshPracticeData, refreshPracticeAvailability, refreshEntitlements, refreshProfile]);
 
   if (!appReady) {
     return (
@@ -297,6 +331,8 @@ function AppLayout() {
         onStartPractice={startPractice}
         practiceAvailable={practiceAvailable}
         entitlements={entitlements}
+        profile={profile}
+        onPrestige={prestige}
       />
       <Pages
         practiceData={practiceData}
@@ -306,6 +342,8 @@ function AppLayout() {
         onEntitlementsChanged={refreshEntitlements}
         onStartPractice={startPractice}
         practiceAvailable={practiceAvailable}
+        profile={profile}
+        onPrestige={prestige}
       />
       {/* Google requires the privacy policy to be linked from the homepage. */}
       <footer className="shrink-0 border-t border-slate-800 px-6 py-2.5 flex items-center justify-between text-xs">

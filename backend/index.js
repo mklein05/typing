@@ -10,11 +10,14 @@ import morgan from 'morgan';
 import {
   initDb,
   db,
+  ensureUser,
   createSession,
   getAllSessions,
   getKeyStats,
   getBigramStats,
   getQuotes,
+  getProfile,
+  prestigeUser,
   invalidateBigramCache
 } from './database.js';
 import { requireAuth } from './auth.js';
@@ -66,16 +69,21 @@ app.get('/', (req, res) => {
 app.post('/api/sessions', requireAuth, (req, res) => {
   try {
     const userId = req.userId;
-    const existing = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
-    if (!existing) {
-      db.prepare('INSERT INTO users (id) VALUES (?)').run(userId);
-    }
+    ensureUser(userId);
 
-    const sessionId = createSession(req.body, userId);
+    const result = createSession(req.body, userId);
     // A new session changes this user's bigram stats — drop the cached copy so
     // the next read recomputes instead of serving stale data.
     invalidateBigramCache(userId);
-    res.status(201).json({ session_id: sessionId, message: 'Session saved successfully' });
+    res.status(201).json({
+      session_id: result.sessionId,
+      message: 'Session saved successfully',
+      // XP is computed server-side from the stored keystrokes; the client only
+      // echoes it back on the results screen.
+      xp_earned: result.xpEarned,
+      level: result.level,
+      leveled_up: result.leveledUp,
+    });
   } catch (err) {
     console.error('[sessions] Save failed:', err);
     res.status(500).json({ detail: 'Failed to save session' });
@@ -141,6 +149,26 @@ app.post('/api/users/username', requireAuth, (req, res) => {
 // remaining daily allowance.
 app.get('/api/entitlements', requireAuth, (req, res) => {
   res.json(getEntitlements(req.userId));
+});
+
+// Level, experience and prestige. Level is derived server-side from stored XP,
+// so the curve is never duplicated in the client.
+app.get('/api/profile', requireAuth, (req, res) => {
+  ensureUser(req.userId);
+  res.json(getProfile(req.userId));
+});
+
+// Manual prestige: only allowed once level 100 has been reached, which is why
+// it is an explicit action rather than an automatic reset mid-session.
+app.post('/api/prestige', requireAuth, (req, res) => {
+  ensureUser(req.userId);
+  const result = prestigeUser(req.userId);
+
+  if (!result) {
+    return res.status(400).json({ detail: 'You can only prestige at level 100.' });
+  }
+
+  res.json({ ...getProfile(req.userId), prestiged: true });
 });
 
 // LLM-generated practice. Deliberately separate from /api/practice/generate so

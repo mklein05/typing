@@ -5,6 +5,8 @@ import BigramChart from './BigramChart';
 import BigramTable from './BigramTable';
 import KeyboardHeatmap from './KeyboardHeatmap';
 import { apiFetch } from '../api';
+import { toRoman } from '../lib/roman';
+import ConfirmDialog from './ConfirmDialog';
 
 const KEYS_API = '/api/stats/keys';
 const BIGRAMS_API = '/api/stats/bigrams';
@@ -13,7 +15,7 @@ const BIGRAMS_API = '/api/stats/bigrams';
  * Dashboard — fetches per-key and bigram stats from the backend and renders
  * summary cards, bar charts of worst keys/bigrams, and sortable tables.
  */
-export default function Dashboard({ onBackToTest, onStartPractice, practiceAvailable }) {
+export default function Dashboard({ onBackToTest, onStartPractice, practiceAvailable, profile, onPrestige }) {
   const [data, setData] = useState(null);              // key stats API response
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -24,6 +26,7 @@ export default function Dashboard({ onBackToTest, onStartPractice, practiceAvail
 
   const [keysExpanded, setKeysExpanded] = useState(false);
   const [bigramsExpanded, setBigramsExpanded] = useState(false);
+  const [prestigeOpen, setPrestigeOpen] = useState(false);
 
   /** Fetch both key stats and bigrams in parallel. */
   function fetchStats() {
@@ -107,6 +110,17 @@ export default function Dashboard({ onBackToTest, onStartPractice, practiceAvail
   // ─── Success state ──────────────────────────────────────────────
   const { keys, total_keystrokes_analysed, total_sessions } = data;
 
+  const level = profile?.level ?? null;
+  const prestige = profile?.prestige ?? 0;
+  const xpForNext = profile?.xp_for_next_level ?? null;
+  const xpIntoLevel = profile?.xp_into_level ?? 0;
+  const xpPct = xpForNext ? Math.min(100, Math.round((xpIntoLevel / xpForNext) * 100)) : 100;
+
+  function handlePrestige() {
+    // Confirm in the themed dialog rather than window.confirm.
+    setPrestigeOpen(true);
+  }
+
   // Calculate overall accuracy from the key stats
   const totalCorrect = keys.reduce((sum, k) => sum + (k.total - k.errors), 0);
   const totalAll = keys.reduce((sum, k) => sum + k.total, 0);
@@ -140,6 +154,44 @@ export default function Dashboard({ onBackToTest, onStartPractice, practiceAvail
             Practice My Weaknesses
           </button>
         </div>
+
+        {/* Level / XP */}
+        {profile && (
+          <div className="mb-8 theme-panel rounded-lg p-5">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <p className="theme-text-muted text-sm font-mono">
+                Level{' '}
+                <span className="theme-text font-bold">{level}</span>
+                {prestige > 0 && (
+                  <>
+                    {' · '}
+                    Prestige{' '}
+                    <span className="theme-accent-text font-bold">{toRoman(prestige)}</span>
+                  </>
+                )}
+              </p>
+              <p className="text-xs theme-text-subtle font-mono tabular-nums">
+                {xpForNext == null
+                  ? 'Max level'
+                  : `${xpIntoLevel} / ${xpForNext} XP`}
+              </p>
+            </div>
+            <div className="h-2 theme-panel-muted rounded-full overflow-hidden">
+              <div
+                className="h-full theme-accent transition-all duration-500"
+                style={{ width: `${xpPct}%` }}
+              />
+            </div>
+            {profile.can_prestige && (
+              <button
+                onClick={handlePrestige}
+                className="mt-4 px-5 py-2 font-pixel font-bold text-sm rounded-lg bg-amber-500 text-slate-900 hover:bg-amber-400 transition-colors"
+              >
+                Prestige to {toRoman(prestige + 1)}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -282,6 +334,19 @@ export default function Dashboard({ onBackToTest, onStartPractice, practiceAvail
             </div>
           </>
         )}
+
+        <ConfirmDialog
+          open={prestigeOpen}
+          title="Prestige?"
+          message={`This resets you to level 1 and discards the XP earned at level 100. You'll be Prestige ${toRoman(prestige + 1)}.`}
+          confirmLabel={`Prestige to ${toRoman(prestige + 1)}`}
+          cancelLabel="Not yet"
+          onConfirm={() => {
+            setPrestigeOpen(false);
+            onPrestige?.();
+          }}
+          onCancel={() => setPrestigeOpen(false)}
+        />
       </div>
     </div>
   );
