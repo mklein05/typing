@@ -1,0 +1,34 @@
+# Single-service stack for the AWS deployment (EC2 + EBS data volume).
+#
+#   docker compose up -d --build
+#   docker compose logs -f
+#   docker compose exec backend node restore.js --list
+#
+# Secrets are read from backend/.env on the host at container start via
+# env_file, so they are never baked into the image.
+services:
+  backend:
+    build: .
+    image: typingseal-backend:latest
+    restart: unless-stopped
+
+    env_file: .env
+
+    # These take precedence over env_file.
+    #   DB_PATH       -> the mounted EBS volume, not the ephemeral container FS.
+    #   BACKUP_LABEL  -> keeps this environment's snapshots in their own
+    #                    Supabase Storage folder, so an AWS snapshot can never be
+    #                    restored over Railway's (README -> Backups).
+    environment:
+      PORT: "8000"
+      DB_PATH: /data/typing_test.db
+      BACKUP_LABEL: aws
+
+    # Loopback only: Caddy terminates TLS on 80/443 and proxies to this port, so
+    # the app itself is never exposed to the internet, and port 8000 stays
+    # closed in the security group.
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    volumes:
+      - /data:/data

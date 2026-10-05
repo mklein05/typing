@@ -1,0 +1,18 @@
+# Reverse proxy for the AWS backend.
+#
+# Caddy obtains and renews a Let's Encrypt certificate automatically once:
+#   1. the DNS A record for api.aws.typingseal.com points at this instance's
+#      Elastic IP, and
+#   2. ports 80 and 443 are open in the security group.
+# There is nothing else to configure — no certbot, no cron job.
+#
+# Install on the EC2 host:
+#   sudo cp Caddyfile /etc/caddy/Caddyfile
+#   sudo systemctl restart caddy
+#
+# Replace the site address if you use a different hostname.
+
+api.aws.typingseal.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8000
+}
