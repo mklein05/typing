@@ -8,7 +8,13 @@
 # env_file, so they are never baked into the image.
 services:
   backend:
-    build: .
+    # Named Dockerfile.aws, not Dockerfile, so Railway (which auto-detects a
+    # file called Dockerfile in the service root) keeps building this service
+    # with Railpack. Railway's /data volume is root-owned, so the unprivileged
+    # `node` user this image runs as cannot write the database there.
+    build:
+      context: .
+      dockerfile: Dockerfile.aws
     image: typingseal-backend:latest
     restart: unless-stopped
 

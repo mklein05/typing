@@ -1,5 +1,13 @@
 # syntax=docker/dockerfile:1
 
+# NOTE: deliberately named Dockerfile.aws, not Dockerfile.
+#
+# Railway auto-detects a file named `Dockerfile` in the service root and would
+# build with it, then run as the unprivileged `node` user. Railway's /data
+# volume is root-owned, so the app could read the database but not write it —
+# every write endpoint returned 500. Keeping the name different lets Railway
+# keep building with Railpack, while AWS uses this file via compose.yaml.
+
 # ─── build stage ───────────────────────────────────────────────────────────
 # better-sqlite3 is a native addon, so it is installed here where the build
 # tooling lives. Building inside the same Debian/Node 22 base as the runtime
@@ -29,9 +37,11 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
-# /data is the persistent volume mount point (an EBS volume on EC2). Created
-# and owned by the unprivileged user so the app can write the database when the
-# container runs without a mounted volume.
+# /data is the persistent volume mount point (an EBS volume on EC2). This only
+# helps when NO volume is mounted: a mount shadows the image's /data entirely,
+# so the ownership set here is ignored at runtime. On EC2 the mounted EBS volume
+# must be owned by uid 1000 first — `sudo chown -R 1000:1000 /data` — or the app
+# can read the database but not write it, and every write request returns 500.
 RUN mkdir -p /data && chown node:node /data
 
 COPY --from=build /app/node_modules ./node_modules

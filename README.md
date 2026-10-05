@@ -316,6 +316,25 @@ ever drift apart.
 Backend environment variables must be set in the Railway dashboard, including
 `ALLOWED_ORIGINS` with the deployed frontend URL — otherwise CORS will block every request.
 
+### Backend Docker image / AWS
+
+`backend/Dockerfile.aws` builds the backend for EC2 (see `backend/compose.yaml`).
+It is **not** named `Dockerfile` on purpose: Railway auto-detects a file with
+that exact name in the service root and would build with it, then run as the
+unprivileged `node` user (uid 1000), which cannot write Railway's root-owned
+`/data` volume — reads work but every write endpoint returns 500. The different
+name keeps Railway on Railpack.
+
+This matters because a mounted volume **shadows** the image's `/data`, so the
+`chown` in the Dockerfile has no effect at runtime. On EC2 the EBS volume must be
+made writable by the container user once, on the host:
+
+```bash
+sudo chown -R 1000:1000 /data     # uid 1000 is `node` in the image
+```
+
+Without that, the AWS container has the same read-only-database failure.
+
 ## Scripts
 
 | Where | Command | Does |
