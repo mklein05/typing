@@ -1,0 +1,115 @@
+// Restore a snapshot from Supabase Storage over the live database file.
+//
+// Snapshots are filed per environment, so this only ever sees the folder for the
+// environment it runs in: a laptop reads `local/`, a deployed container reads
+// `production/`. A snapshot from one therefore cannot be restored over the other.
+//
+// Run this INSIDE the deployed container, not on your laptop — locally it would
+// overwrite your dev database instead of the Railway volume:
+//
+//     railway ssh --service backend
+//     node dist/restore.js --list
+//     node dist/restore.js                  # newest snapshot
+//     node dist/restore.js typing_test-2026-09-14T02-00-00-000Z.db
+//
+// Then restart the backend service so it reopens the replaced file. The running
+// process keeps its old handle until then, which is what you want: nothing is
+// swapped out from under a live request.
+
+import 'dotenv/config';
+
+import Database from 'better-sqlite3';
+import fs from 'fs';
+import path from 'path';
+
+import { resolveDbPath } from './dbpath.js';
+import { listBackups, downloadBackup, backupLabel } from './backup.js';
+
+const DB_PATH = resolveDbPath();
+const wanted = process.argv[2];
+
+async function main(): Promise<void> {
+  const snapshots = await listBackups();
+
+  if (snapshots.length === 0) {
+    console.error(`No snapshots for environment "${backupLabel()}". Nothing to restore.`);
+    process.exit(1);
+  }
+
+  if (wanted === '--list') {
+    console.log(`Snapshots for ${DB_PATH} (environment "${backupLabel()}"):`);
+    for (const s of snapshots) {
+      const kb = ((s.metadata?.size ?? 0) / 1024).toFixed(0);
+      console.log(`  ${s.name}  ${kb} KB  ${s.created_at}`);
+    }
+    return;
+  }
+
+  const target = wanted || snapshots[0].name;
+  if (!snapshots.some((s) => s.name === target)) {
+    console.error(`No such snapshot: ${target} (use --list to see them)`);
+    process.exit(1);
+  }
+
+  console.log(`Downloading ${target} ...`);
+  const bytes = await downloadBackup(target);
+  console.log(`  ${(bytes.length / 1024).toFixed(0)} KB`);
+
+  // Verify before touching the live file. Restoring a corrupt snapshot over a
+  // good database turns one problem into two.
+  const staging = `${DB_PATH}.incoming`;
+  fs.writeFileSync(staging, bytes);
+
+  const check = new Database(staging, { readonly: true, fileMustExist: true });
+  let integrity: unknown;
+  let sessions = 0;
+  let keystrokes = 0;
+  try {
+    integrity = check.pragma('integrity_check', { simple: true });
+    sessions = check.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM sessions').get()?.n ?? 0;
+    keystrokes = check.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM keystrokes').get()?.n ?? 0;
+  } finally {
+    check.close();
+  }
+
+  if (integrity !== 'ok') {
+    fs.rmSync(staging, { force: true });
+    console.error(`Snapshot is corrupt (${integrity}). Live database untouched.`);
+    process.exit(1);
+  }
+  console.log(`  verified: ${sessions} sessions, ${keystrokes} keystrokes`);
+
+  // Keep the current file, so a mistaken restore is itself reversible.
+  if (fs.existsSync(DB_PATH)) {
+    const aside = `${DB_PATH}.pre-restore-${Date.now()}`;
+    fs.copyFileSync(DB_PATH, aside);
+    console.log(`Previous database kept at ${path.basename(aside)}`);
+  }
+
+  try {
+    fs.renameSync(staging, DB_PATH); // atomic swap within the same directory
+  } catch (err) {
+    fs.rmSync(staging, { force: true });
+    console.error(`Could not replace ${DB_PATH}: ${err instanceof Error ? err.message : err}`);
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EPERM' || code === 'EBUSY') {
+      console.error(
+        'The file is locked by another process. Stop whatever is using it — including a\n' +
+          'running dev server — and try again. The database is unchanged.'
+      );
+    }
+    process.exit(1);
+  }
+
+  console.log(`Restored ${target} → ${DB_PATH}`);
+  console.log(
+    'Restart the backend service NOW so it reopens the file. The swap is atomic, but the\n' +
+      'running process keeps its old handle, so anything it writes before restarting goes\n' +
+      'to a file that no longer exists and is lost.'
+  );
+}
+
+main().catch((err: unknown) => {
+  console.error(err);
+  process.exit(1);
+});

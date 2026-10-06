@@ -1,0 +1,14 @@
+{
+  // Emit config used by `npm run build`. Sources live at the backend root, so
+  // `rootDir: "."` reproduces the same relative layout in `dist/` — which is
+  // what keeps the `.js`-suffixed relative imports resolving unchanged.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": ".",
+    "allowJs": false
+  },
+  "include": ["*.ts"],
+  "exclude": ["node_modules", "dist", "test"]
+}

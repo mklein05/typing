@@ -6,6 +6,9 @@
 node_modules
 npm-debug.log*
 
+# Stale local build output; the image compiles its own.
+dist
+
 # Secrets. .env.example is the empty template and is safe to include.
 .env
 .env.*

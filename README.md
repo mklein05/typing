@@ -6,9 +6,10 @@ A MonkeyType-style typing test with personalised practice, bigram analytics and 
 
 | Path | What it is |
 | --- | --- |
-| `frontend/` | React 19 + Vite app — typing test, dashboard, charts |
-| `backend/` | Node 22 + Express API — SQLite (`better-sqlite3`), Supabase auth |
+| `frontend/` | React 19 + Vite + TypeScript app — typing test, dashboard, charts |
+| `backend/` | Node 22 + Express + TypeScript API — SQLite (`better-sqlite3`), Supabase auth |
 | `scripts/` | Repo maintenance scripts (word-bank drift check) |
+| `deploy/` | Host config for the AWS deployment (`Caddyfile`) |
 
 ## Local development
 
@@ -19,8 +20,13 @@ Run each in its own terminal.
 ```bash
 cd backend
 npm install
-npm run dev      # node --watch index.js
+npm run dev      # tsx watch index.ts
 ```
+
+The backend is TypeScript. `npm run dev` and `npm test` run the sources directly
+through `tsx`; `npm run build` compiles to `backend/dist/`, which is what
+`npm start` and the deployed containers run. `npm run typecheck` checks without
+emitting.
 
 **Frontend** — <http://localhost:5173>
 
@@ -79,7 +85,7 @@ Without that, every deploy starts from an empty database.
 ## Backups
 
 The volume is durable across redeploys, but nothing copies it anywhere. If it is corrupted,
-detached, or deleted, every session and keystroke goes with it. `backend/backup.js` takes
+detached, or deleted, every session and keystroke goes with it. `backend/backup.ts` takes
 daily snapshots and ships them to **Supabase Storage**, so that loss is recoverable.
 
 ### Setup
@@ -128,9 +134,9 @@ database instead of the volume. Use the Railway dashboard's service Shell, or
 `railway ssh --service backend`.
 
 ```bash
-node restore.js --list          # snapshots, newest first
-node restore.js                 # restore the newest
-node restore.js typing_test-2026-09-14T02-00-00-000Z.db
+node dist/restore.js --list          # snapshots, newest first
+node dist/restore.js                 # restore the newest
+node dist/restore.js typing_test-2026-09-14T02-00-00-000Z.db
 ```
 
 The snapshot is downloaded and integrity-checked *before* the live file is touched, the
@@ -143,7 +149,7 @@ request.
 
 ## Premium entitlements
 
-`backend/entitlements.js` owns plans and metered usage. It is deliberately
+`backend/entitlements.ts` owns plans and metered usage. It is deliberately
 provider-agnostic: whatever sells the subscription (Paddle, Lemon Squeezy, Stripe) only
 has to call `setPremium()` from a webhook. Nothing there knows which one it is.
 
@@ -175,7 +181,7 @@ never sends an XP value.
 
 - **Levels 1–100.** The XP needed to advance grows each level:
   `totalXpToReach(level) = 10 * (level - 1)^2`, so level 100 is ~98,000 XP.
-- **Level is derived, never stored.** `backend/leveling.js` is the only place the curve
+- **Level is derived, never stored.** `backend/leveling.ts` is the only place the curve
   lives; the server computes the level from `users.xp` on read, so there is one source of
   truth and no drift.
 - **Prestige is manual.** At level 100 the profile menu and dashboard offer a Prestige
@@ -185,7 +191,7 @@ never sends an XP value.
 
 | Piece | Where |
 | --- | --- |
-| The XP curve | `backend/leveling.js` (`CURVE_A`, `MAX_LEVEL`) |
+| The XP curve | `backend/leveling.ts` (`CURVE_A`, `MAX_LEVEL`) |
 | `users.xp`, `users.prestige`, `users.lifetime_xp` | Guarded migration in `initDb()` |
 | `sessions.mode`, `sessions.xp_earned` | Records practice (2×) and what each session awarded |
 | XP award | `createSession()` — same transaction as the session insert |
@@ -195,7 +201,7 @@ never sends an XP value.
 
 ## LLM-generated practice
 
-`backend/llmPractice.js` generates a short passage of natural text engineered to be dense in
+`backend/llmPractice.ts` generates a short passage of natural text engineered to be dense in
 the user's weakest bigrams. It is returned as `practice_words` — exactly the shape the
 practice pipeline already consumes, so **no frontend render changes are needed**.
 
@@ -289,6 +295,10 @@ Two services built from this one repository:
 `/dashboard`, `/practice`, `/privacy` and `/terms` only resolve on a direct load
 if unknown paths fall back to `index.html`.
 
+The backend is TypeScript, so its `npm start` (`node dist/index.js`) only works
+after a build. Railpack runs the `build` script (`tsc -p tsconfig.build.json`)
+before `start`; the AWS image builds it in its own stage (see below).
+
 ### Frontend caching
 
 `frontend/public/serve.json` sets the cache policy for the static server (it is
@@ -307,8 +317,8 @@ If Cloudflare proxies the frontend, set **Caching → Browser Cache TTL** to
 *Respect Existing Headers* (otherwise it can override the origin's policy), and
 purge the cache once after deploying this change.
 
-The typing word list is duplicated on purpose in `frontend/src/components/TypingTest.jsx`
-and `backend/practice.js`, so each service builds from its own directory with no
+The typing word list is duplicated on purpose in `frontend/src/components/TypingTest.tsx`
+and `backend/practice.ts`, so each service builds from its own directory with no
 cross-directory imports. Edit both copies together and run
 `node scripts/check-word-bank.mjs` from the repo root — it exits non-zero if they
 ever drift apart.
@@ -316,7 +326,37 @@ ever drift apart.
 Backend environment variables must be set in the Railway dashboard, including
 `ALLOWED_ORIGINS` with the deployed frontend URL — otherwise CORS will block every request.
 
-### Backend Docker image / AWS
+## Deployment (AWS)
+
+A second deployment that runs **in parallel** with Railway. Railway serves
+`typingseal.com`; AWS serves `aws.typingseal.com`. The two share one Supabase
+project, so the same account can sign in to either — but they have **separate
+SQLite databases**, so sessions, bigram stats and XP are per-deployment.
+
+### Shape
+
+| Piece | Service | Hostname |
+| --- | --- | --- |
+| Frontend | S3 (private) + CloudFront with Origin Access Control | `aws.typingseal.com` |
+| Backend | EC2 `t4g.micro` (arm64) + EBS data volume, Docker Compose | `api.aws.typingseal.com` |
+| API TLS | Caddy on the instance (Let's Encrypt, HTTP-01) | — |
+| Site TLS | ACM certificate, in **`us-east-1` only** | — |
+| DNS | Cloudflare, both records **DNS only** | — |
+
+There is no load balancer and no NAT gateway: Caddy terminates TLS on the
+instance, and the instance sits in a public subnet with only 80/443 open. That is
+what keeps the bill to the instance, its IP and the volume.
+
+### Deploy files
+
+| File | Purpose |
+| --- | --- |
+| `backend/Dockerfile.aws` | Multi-stage build. Compiles the TypeScript in a build stage, then ships `dist/` and production dependencies to the runtime stage. `better-sqlite3` is a native addon, so it is installed in the same Debian/Node 22 base the app runs on — a `node_modules` built on Windows produces a binary the container cannot load. |
+| `backend/.dockerignore` | Load-bearing. Docker does not read `.gitignore`, so without it `COPY . .` would bake `.env` and `typing_test.db` into an image layer, and then into any registry the image reaches. |
+| `backend/compose.yaml` | One service. Sets `DB_PATH=/data/typing_test.db` and `BACKUP_LABEL=aws`, mounts the EBS volume, and publishes the port to loopback only. |
+| `deploy/Caddyfile` | Reverse proxy and automatic TLS for the API hostname. |
+
+### Backend Docker image
 
 `backend/Dockerfile.aws` builds the backend for EC2 (see `backend/compose.yaml`).
 It is **not** named `Dockerfile` on purpose: Railway auto-detects a file with
@@ -335,6 +375,116 @@ sudo chown -R 1000:1000 /data     # uid 1000 is `node` in the image
 
 Without that, the AWS container has the same read-only-database failure.
 
+### Backend environment
+
+Same variables as Railway, with three that must differ:
+
+| Variable | Value | Why |
+| --- | --- | --- |
+| `DB_PATH` | `/data/typing_test.db` | The EBS volume, not the container's ephemeral filesystem. Set by `compose.yaml`. |
+| `BACKUP_LABEL` | `aws` | `backup.ts` falls back to `RAILWAY_ENVIRONMENT_NAME`, which does not exist on AWS — without this, snapshots land in `local/` and collide with a laptop's. |
+| `ALLOWED_ORIGINS` | `https://aws.typingseal.com` | Otherwise CORS blocks every request. |
+
+### One-time setup
+
+1. **EC2** — Ubuntu 24.04 LTS **arm64** (it must match the Graviton instance),
+   `t4g.micro`, a key pair, and a security group allowing 22, 80 and 443. For
+   port 22, allow both your own IP **and** the region's EC2 Instance Connect
+   prefix list (`com.amazonaws.<region>.ec2-instance-connect`): the browser-based
+   console client connects from that range, not from your IP. **Never open 8000.**
+2. **Elastic IP**, associated with the instance, so the DNS record survives a
+   reboot.
+3. **EBS volume** — `gp3`, same Availability Zone, attached at `/dev/sdf`,
+   formatted `ext4`, mounted at `/data` by **UUID** with `nofail`, and owned by
+   uid `1000` (see above). Delete-on-termination off.
+4. **Docker** and a swapfile — `npm ci` for a native module can exhaust 1 GB of RAM.
+5. `git clone`, `cp .env.example .env` and fill it in, then
+   `docker compose up -d --build`.
+6. **Caddy** on the host, with `deploy/Caddyfile` copied to `/etc/caddy/Caddyfile`.
+7. **Cloudflare DNS** — `api.aws` A → the Elastic IP, and `aws` CNAME → the
+   CloudFront distribution domain. Both **DNS only (grey cloud)**: with the orange
+   cloud on, Cloudflare terminates TLS, so the Let's Encrypt HTTP-01 challenge
+   cannot complete.
+8. **ACM certificate** for `aws.typingseal.com`, requested **in `us-east-1`**
+   (CloudFront accepts nothing else), DNS-validated with a `_hash.aws` CNAME in
+   Cloudflare. Leave that record in place — ACM renews through it.
+9. **CloudFront** — the S3 **REST** endpoint as origin with an Origin Access
+   Control, the alternate domain name, default root object `index.html`, and
+   custom error responses mapping **both 403 and 404** to `/index.html` with a
+   200. This is the CloudFront equivalent of `serve -s`: an OAC bucket returns
+   403, not 404, for a missing key, so `/dashboard` needs the 403 mapping.
+10. **Bucket policy** granting `cloudfront.amazonaws.com` `s3:GetObject`, scoped
+    with an `AWS:SourceArn` condition so no other distribution can read the
+    bucket.
+11. **Supabase → Authentication → URL Configuration** — add
+    `https://aws.typingseal.com` to **Redirect URLs**. The client asks for
+    `redirectTo: window.location.origin`; if that origin is not allowlisted,
+    Supabase **silently falls back to the Site URL** and sends the user to
+    `typingseal.com` instead. Nothing in the app reports the mismatch.
+
+### Caching
+
+The two CloudFront behaviors reproduce `frontend/public/serve.json`:
+
+| Behavior | CloudFront cache policy | Object metadata |
+| --- | --- | --- |
+| `assets/*` | `CachingOptimized` | `public, max-age=31536000, immutable` |
+| `*` (default) | `CachingDisabled` | `no-cache` |
+
+The metadata is written at upload time (`aws s3 sync --cache-control`). The
+default behavior deliberately does not cache `index.html` — the same
+stale-app-shell problem the Railway caching section describes, enforced at a
+different layer.
+
+### Deploy loop
+
+Frontend — rebuild, sync in two passes, then invalidate:
+
+```bash
+cd frontend
+npm run build
+aws s3 sync dist s3://typingseal-aws-site --delete --exclude "assets/*" --cache-control "no-cache"
+aws s3 sync dist/assets s3://typingseal-aws-site/assets --cache-control "public, max-age=31536000, immutable"
+aws cloudfront create-invalidation --distribution-id <ID> --paths "/*"
+```
+
+`VITE_API_URL` is inlined at build time, so the frontend must be rebuilt whenever
+the API origin changes. Create `frontend/.env.production` containing
+`VITE_API_URL=https://api.aws.typingseal.com`; it is gitignored, so Railway's
+build (which points at its own API) is unaffected.
+
+Backend:
+
+```bash
+cd ~/typing && git pull
+cd backend && docker compose up -d --build
+```
+
+### Why one instance only
+
+SQLite is single-writer, and two other things assume a single process:
+
+- `getBigramStats` caches per process, and `invalidateBigramCache` only clears
+  the local copy — with two replicas, the other serves up to 5 minutes of stale
+  stats.
+- `startBackupSchedule()` runs a `setInterval` in every process, so N replicas
+  would take N duplicate snapshots.
+
+Scaling out therefore needs all three: a networked database, a shared cache, and
+a single owner for the schedule. `POST /api/admin/backup` already exists so an
+external scheduler can drive backups with a shared secret instead of an
+in-process timer.
+
+### Cost
+
+Roughly **$13–20/month** in `us-east-1`: the `t4g.micro`, its public IPv4, an
+8–20 GB gp3 volume, and a domain already paid for on Cloudflare. CloudFront's
+always-free tier (1 TB + 10M requests/month) and the S3 and egress allowances
+cover the app's traffic. There is no ALB (~$16+/month) and no NAT gateway
+(~$32+/month) by design. New AWS accounts are on a credit model — $100 on
+sign-up, up to $200, with a free plan that ends after 6 months or when the credit
+runs out — so set a budget alarm before creating anything.
+
 ## Scripts
 
 | Where | Command | Does |
@@ -344,9 +494,11 @@ Without that, the AWS container has the same read-only-database failure.
 | frontend | `npm start` | Serve the build with SPA fallback (`serve -s dist`) |
 | frontend | `npm run preview` | Serve the production build locally |
 | frontend | `npm run lint` | Oxlint |
-| backend | `npm run dev` | Express with `--watch` |
-| backend | `npm start` | Express (used by Railway) |
-| backend | `npm test` | Run the backend test suite (`node --test`) |
+| backend | `npm run dev` | Express via `tsx watch` |
+| backend | `npm run build` | Compile TypeScript to `backend/dist/` (`tsc`) |
+| backend | `npm run typecheck` | Type-check without emitting |
+| backend | `npm start` | Run the compiled app in `dist/` (used by Railway) |
+| backend | `npm test` | Run the backend test suite (`node --test` via `tsx`) |
 | backend | `npm run backup` | Take and upload a snapshot now |
 | backend | `npm run restore` | Restore a snapshot over the live database |
 
@@ -358,7 +510,7 @@ Without that, the AWS container has the same read-only-database failure.
   the typing test. The font's design grid is 120/1080 em, so text is pixel-perfect at whole
   multiples of 9px (18px, 36px, 72px…).
 - **Theming** — Tailwind v3. The `slate` and `amber` scales are overridden in
-  `frontend/tailwind.config.js` for the dark-mint + gold palette, and border radii are
+  `frontend/tailwind.config.ts` for the dark-mint + gold palette, and border radii are
   zeroed for squared corners. Chart and keyboard-heatmap colours are deliberately left as
   Tailwind defaults so that performance meaning (green → red) is preserved.
 - **Auth** — Supabase issues the token; the backend verifies it with

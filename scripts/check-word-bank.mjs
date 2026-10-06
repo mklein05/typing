@@ -1,6 +1,6 @@
 // Guards the two duplicated word banks against drift.
 //
-// backend/practice.js and frontend/src/components/TypingTest.jsx each carry
+// backend/practice.ts and frontend/src/components/TypingTest.tsx each carry
 // their own copy of the word list on purpose: Railway builds each service from
 // its own directory, so a module at the repo root would not be in either build
 // context. This script is what keeps that duplication honest.
@@ -9,8 +9,9 @@
 //
 //     node scripts/check-word-bank.mjs
 //
-// `findWordBankDrift()` is also imported by backend/test/wordBank.test.js, so
-// the same check runs as part of `npm test`.
+// `findWordBankDrift()` is also imported by backend/test/wordBank.test.ts, so
+// the same check runs as part of `npm test`. Its types live in the sibling
+// check-word-bank.d.mts.
 
 import fs from 'fs';
 import path from 'path';
@@ -25,15 +26,20 @@ function readBank(relPath, pattern) {
   return [...match[1].matchAll(/'([a-z]+)'/g)].map((m) => m[1]);
 }
 
+// The declaration is allowed to carry a TypeScript type annotation, e.g.
+// `const WORD_BANK: string[] = [...]`. Matching it optionally means the
+// checker survives the migration without the bank itself being reformatted.
+const DECL = (keyword) => new RegExp(`${keyword} WORD_BANK(?:\\s*:[^=]+)? = \\[([\\s\\S]*?)\\];`);
+
 /**
  * Compare the two copies. Returns `{ backend, frontend, problems }`, where
  * `problems` is empty when they match.
  */
 export function findWordBankDrift() {
-  const backend = readBank('backend/practice.js', /export const WORD_BANK = \[([\s\S]*?)\];/);
+  const backend = readBank('backend/practice.ts', DECL('export const'));
   const frontend = readBank(
-    'frontend/src/components/TypingTest.jsx',
-    /const WORD_BANK = \[([\s\S]*?)\];/
+    'frontend/src/components/TypingTest.tsx',
+    DECL('const')
   );
 
   const problems = [];
@@ -61,7 +67,7 @@ function main() {
   if (problems.length > 0) {
     console.error('Word banks have drifted apart:');
     for (const p of problems) console.error(`  ${p}`);
-    console.error('\nUpdate both backend/practice.js and frontend/src/components/TypingTest.jsx.');
+    console.error('\nUpdate both backend/practice.ts and frontend/src/components/TypingTest.tsx.');
     process.exit(1);
   }
   console.log(`Word banks match (${backend.length} words).`);

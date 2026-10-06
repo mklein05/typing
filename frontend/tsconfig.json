@@ -1,0 +1,26 @@
+{
+  // Single config for app + Vite/Tailwind config files. `npm run build` runs
+  // `tsc --noEmit` first, so type errors fail the build.
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "strict": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": [
+    "src",
+    "vite.config.ts",
+    "tailwind.config.ts",
+    "postcss.config.ts"
+  ]
+}

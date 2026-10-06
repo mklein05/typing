@@ -4,11 +4,13 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js",
-    "test": "node --test",
-    "backup": "node backup.js",
-    "restore": "node restore.js"
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js",
+    "dev": "tsx watch index.ts",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "backup": "tsx backup.ts",
+    "restore": "tsx restore.ts"
   },
   "keywords": [],
   "author": "",
@@ -25,5 +27,14 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "morgan": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   }
 }
