@@ -26,9 +26,11 @@ cd backend && npm run typecheck               # tsc --noEmit
 
 # frontend -> http://localhost:5173
 cd frontend && npm install && npm run dev
+cd frontend && npm test                       # vitest run (src/**/*.test.ts[x])
+cd frontend && npm run typecheck              # tsc --noEmit
 ```
 
-- **Backend tests**: plain `node:test` (no dependencies) in `backend/test/`, run through `tsx` so the `.ts` sources execute directly. There is no frontend test runner. Don't claim frontend tests pass — verify with `npm run lint` and `npm run build`.
+- **Tests**: backend uses `node:test` in `backend/test/` (run through `tsx`, no dependencies); frontend uses Vitest + Testing Library, co-located as `frontend/src/**/*.test.{ts,tsx}` (config `frontend/vitest.config.ts`, cleanup in `src/test-setup.ts`). `backend/test/routes.test.ts` boots the real Express app on an ephemeral port with a stubbed auth. CI (`.github/workflows/ci.yml`) runs typecheck + tests + build for both.
 - **TypeScript**: both projects are strict. `backend/tsconfig.json` is the no-emit typecheck config; `backend/tsconfig.build.json` emits `dist/` (root files only, tests excluded). The frontend `npm run build` is `tsc --noEmit && vite build`, so a type error fails the build.
 - Other automated verification: frontend `npm run lint` (oxlint, config `frontend/.oxlintrc.json`) and `npm run build` (tsc + Vite); `node scripts/check-word-bank.mjs` at the repo root (also covered by the backend suite).
 - Tests that touch the DB set `DB_PATH=':memory:'` before dynamically importing `database.ts` (it opens the DB at import). Never import it statically in a test — a type-only `import type` is safe because it is erased. `createSession` needs a `users` row, so call `ensureUser(userId)` first.
@@ -43,6 +45,7 @@ cd frontend && npm install && npm run dev
 - **Bigram stats are cached 5 min per user** (`getBigramStats`). Any write that adds sessions must call `invalidateBigramCache(userId)` or reads serve stale data.
 - **Levels/prestige**: the XP curve lives only in `backend/leveling.ts` (pure). Level is derived from `users.xp` on read and never stored; `createSession()` awards XP in the same transaction as the session and `sessions.mode` records practice (2×). Prestige is a manual `POST /api/prestige`, only valid at level 100.
 - **Testability seams**: `practice.ts`, `llmValidation.ts` and `leveling.ts` are pure (no DB/network) — `generatePractice({ stats })` receives stats from the caller, and `getLlmPractice` accepts an optional `fetchImpl`. `database.ts` still opens SQLite at import, so a test must set `DB_PATH=':memory:'` before importing it. `.env` is loaded by entrypoints via `import 'dotenv/config'` (their first import); `dbpath.ts` only exposes `resolveDbPath()` and never reads `.env`, so importing modules in tests cannot pick up the real database path. `entitlements.ts` accepts an optional `now` for deterministic quota tests.
+- **Route tests**: `app.ts` exports `createApp({ requireAuth, logRequests })`, so routes can be exercised without `listen()`, a fixed port, or the backup schedule (all of which stay in `index.ts`). Gotcha: importing `app.ts` transitively imports `backup.ts`, whose first import is `dotenv/config`, so `.env` is loaded as a side effect — clear any env var a test depends on being *unset* **after** importing the app, not before.
 - Config: `ALLOWED_ORIGINS` must include the frontend origin or CORS blocks everything (defaults to `localhost:5173,localhost:3000`). Frontend falls back to `http://localhost:8000` when `VITE_API_URL` is unset.
 
 ## Frontend conventions (non-obvious)

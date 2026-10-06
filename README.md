@@ -494,6 +494,8 @@ runs out — so set a budget alarm before creating anything.
 | frontend | `npm start` | Serve the build with SPA fallback (`serve -s dist`) |
 | frontend | `npm run preview` | Serve the production build locally |
 | frontend | `npm run lint` | Oxlint |
+| frontend | `npm run typecheck` | Type-check without emitting |
+| frontend | `npm test` | Run the frontend tests (Vitest + Testing Library) |
 | backend | `npm run dev` | Express via `tsx watch` |
 | backend | `npm run build` | Compile TypeScript to `backend/dist/` (`tsc`) |
 | backend | `npm run typecheck` | Type-check without emitting |
